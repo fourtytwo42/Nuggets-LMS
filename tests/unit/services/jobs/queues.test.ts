@@ -1,4 +1,9 @@
-import { ingestionQueue, embeddingQueue } from '@/services/jobs/queues';
+import {
+  ingestionQueue,
+  embeddingQueue,
+  aiAuthoringQueue,
+  narrativeQueue,
+} from '@/services/jobs/queues';
 import { Queue } from 'bullmq';
 
 jest.mock('bullmq');
@@ -24,8 +29,20 @@ describe('Job Queues', () => {
     expect(embeddingQueue).toBeInstanceOf(Queue);
   });
 
+  it('should create aiAuthoring queue', () => {
+    expect(aiAuthoringQueue).toBeDefined();
+    expect(aiAuthoringQueue).toBeInstanceOf(Queue);
+  });
+
+  it('should create narrative queue', () => {
+    expect(narrativeQueue).toBeDefined();
+    expect(narrativeQueue).toBeInstanceOf(Queue);
+  });
+
   it('should have correct queue names', () => {
     expect(ingestionQueue.name).toBe('ingestion');
     expect(embeddingQueue.name).toBe('embedding');
+    expect(aiAuthoringQueue.name).toBe('ai-authoring');
+    expect(narrativeQueue.name).toBe('narrative');
   });
 });

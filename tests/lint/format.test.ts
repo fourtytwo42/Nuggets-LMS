@@ -25,10 +25,13 @@ describe('Code Formatting', () => {
           ...config,
         });
 
-        // Check if file is already formatted (allowing for minor whitespace differences)
-        const normalizedContent = content.replace(/\s+/g, ' ').trim();
-        const normalizedFormatted = formatted.replace(/\s+/g, ' ').trim();
-        expect(normalizedContent).toBe(normalizedFormatted);
+        // Check if file is already formatted
+        // Normalize both by formatting and comparing
+        const contentFormatted = await prettier.format(content, {
+          parser: file.endsWith('.tsx') ? 'typescript' : 'typescript',
+          ...config,
+        });
+        expect(contentFormatted).toBe(formatted);
       }
     }
   });

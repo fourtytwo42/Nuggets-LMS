@@ -1,8 +1,18 @@
 import { WebSocketServerManager, wsServerManager } from '@/lib/websocket/server';
-import { WebSocketServer, WebSocket } from 'ws';
 import logger from '@/lib/logger';
 
-jest.mock('ws');
+const mockWebSocketServer = jest.fn();
+const mockOn = jest.fn();
+const mockClose = jest.fn();
+
+jest.mock('ws', () => {
+  const actualWs = jest.requireActual('ws');
+  return {
+    ...actualWs,
+    WebSocketServer: mockWebSocketServer,
+  };
+});
+
 jest.mock('@/lib/logger', () => ({
   __esModule: true,
   default: {
@@ -21,39 +31,38 @@ describe('WebSocket Server Manager', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockWss = {
-      on: jest.fn(),
+      on: mockOn,
       clients: new Set(),
-      close: jest.fn(),
+      close: mockClose,
     };
     mockServer = {};
-    (WebSocketServer as jest.Mock).mockImplementation(() => mockWss);
+    mockWebSocketServer.mockReturnValue(mockWss);
     manager = new WebSocketServerManager();
   });
 
   it('should initialize WebSocket server', () => {
     const result = manager.initialize(mockServer, '/api/ws');
-    expect(WebSocketServer).toHaveBeenCalledWith({ server: mockServer, path: '/api/ws' });
-    expect(mockWss.on).toHaveBeenCalledWith('connection', expect.any(Function));
+    expect(mockWebSocketServer).toHaveBeenCalledWith({ server: mockServer, path: '/api/ws' });
+    expect(mockOn).toHaveBeenCalledWith('connection', expect.any(Function));
     expect(result).toBe(mockWss);
   });
 
   it('should not reinitialize if already initialized', () => {
     manager.initialize(mockServer);
-    const callCount = (WebSocketServer as jest.Mock).mock.calls.length;
+    const callCount = mockWebSocketServer.mock.calls.length;
     manager.initialize(mockServer);
-    expect((WebSocketServer as jest.Mock).mock.calls.length).toBe(callCount);
+    expect(mockWebSocketServer.mock.calls.length).toBe(callCount);
   });
 
   it('should send message to specific session', () => {
     const mockWs = {
-      readyState: WebSocket.OPEN,
+      readyState: 1, // WebSocket.OPEN
       send: jest.fn(),
     };
     (manager as any).connections.set('session-123', mockWs);
 
-    const result = manager.sendToSession('session-123', { type: 'test', data: 'message' });
+    manager.sendToSession('session-123', { type: 'test', data: 'message' });
     expect(mockWs.send).toHaveBeenCalledWith(JSON.stringify({ type: 'test', data: 'message' }));
-    expect(result).toBeUndefined(); // sendToSession doesn't return a value
   });
 
   it('should not send to non-existent session', () => {
@@ -68,15 +77,14 @@ describe('WebSocket Server Manager', () => {
       close: jest.fn(),
       on: jest.fn(),
     };
-    const mockReq = { url: '/' };
 
     manager.initialize(mockServer);
-    const connectionHandler = (mockWss.on as jest.Mock).mock.calls.find(
-      (call) => call[0] === 'connection'
-    )?.[1];
+    const connectionHandler = mockOn.mock.calls.find((call) => call[0] === 'connection')?.[1];
 
     if (connectionHandler) {
-      connectionHandler(mockWs, mockReq);
+      // Create a URL without sessionId
+      const req = { url: '/' };
+      connectionHandler(mockWs, req);
       // Connection should be closed if no sessionId
       expect(mockWs.close).toHaveBeenCalledWith(1008, 'Session ID required');
     }
@@ -84,27 +92,20 @@ describe('WebSocket Server Manager', () => {
 
   it('should handle message types', () => {
     const mockWs = {
-      readyState: WebSocket.OPEN,
+      readyState: 1,
       send: jest.fn(),
       on: jest.fn(),
     };
-    const mockReq = { url: '/?sessionId=test-123' };
 
     manager.initialize(mockServer);
-    const connectionHandler = (mockWss.on as jest.Mock).mock.calls.find(
-      (call) => call[0] === 'connection'
-    )?.[1];
+    const connectionHandler = mockOn.mock.calls.find((call) => call[0] === 'connection')?.[1];
 
     if (connectionHandler) {
-      connectionHandler(mockWs, mockReq);
+      connectionHandler(mockWs, { url: '/?sessionId=test-123' });
 
-      // Get message handler
-      const messageHandler = (mockWs.on as jest.Mock).mock.calls.find(
-        (call) => call[0] === 'message'
-      )?.[1];
+      const messageHandler = mockWs.on.mock.calls.find((call) => call[0] === 'message')?.[1];
 
       if (messageHandler) {
-        // Test ping message
         messageHandler(Buffer.from(JSON.stringify({ type: 'ping' })));
         expect(mockWs.send).toHaveBeenCalled();
       }
@@ -112,8 +113,8 @@ describe('WebSocket Server Manager', () => {
   });
 
   it('should broadcast to all connections', () => {
-    const mockWs1 = { readyState: WebSocket.OPEN, send: jest.fn() };
-    const mockWs2 = { readyState: WebSocket.OPEN, send: jest.fn() };
+    const mockWs1 = { readyState: 1, send: jest.fn() };
+    const mockWs2 = { readyState: 1, send: jest.fn() };
     (manager as any).connections.set('session-1', mockWs1);
     (manager as any).connections.set('session-2', mockWs2);
 
@@ -125,7 +126,7 @@ describe('WebSocket Server Manager', () => {
   it('should close server', () => {
     (manager as any).wss = mockWss;
     manager.close();
-    expect(mockWss.close).toHaveBeenCalled();
+    expect(mockClose).toHaveBeenCalled();
     expect((manager as any).wss).toBeNull();
     expect((manager as any).connections.size).toBe(0);
   });

@@ -64,26 +64,45 @@ describe('VoiceInterface Extended Tests', () => {
 
   it('should handle onVoiceMessage error', async () => {
     const onVoiceMessage = jest.fn().mockRejectedValue(new Error('API error'));
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+
+    (global.navigator.mediaDevices.getUserMedia as jest.Mock).mockResolvedValue({
+      getTracks: jest.fn().mockReturnValue([
+        {
+          stop: jest.fn(),
+        },
+      ]),
+    });
+
     render(<VoiceInterface sessionId="session-id" onVoiceMessage={onVoiceMessage} />);
 
     const button = screen.getByRole('button');
     fireEvent.click(button);
 
-    await waitFor(() => {
-      expect(screen.getByText(/Listening/i)).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByText(/Listening|Recording/i)).toBeInTheDocument();
+      },
+      { timeout: 1000 }
+    );
 
-    if (mockMediaRecorderInstance && mockMediaRecorderInstance.onstop) {
+    // Simulate MediaRecorder events
+    if (mockMediaRecorderInstance) {
       mockMediaRecorderInstance.ondataavailable({
         data: new Blob(['audio'], { type: 'audio/webm' }),
       });
-      mockMediaRecorderInstance.onstop();
+      if (mockMediaRecorderInstance.onstop) {
+        await mockMediaRecorderInstance.onstop();
+      }
     }
 
-    fireEvent.click(button);
+    await waitFor(
+      () => {
+        expect(onVoiceMessage).toHaveBeenCalled();
+      },
+      { timeout: 2000 }
+    );
 
-    await waitFor(() => {
-      expect(onVoiceMessage).toHaveBeenCalled();
-    });
+    consoleErrorSpy.mockRestore();
   });
 });

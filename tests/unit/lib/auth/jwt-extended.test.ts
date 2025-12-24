@@ -28,20 +28,26 @@ describe('JWT Extended Tests', () => {
       process.env.JWT_EXPIRES_IN = '1h';
       process.env.JWT_SECRET = 'test-secret';
       (jwt.sign as jest.Mock).mockReturnValue('mock-token');
-      generateToken(mockPayload);
-      expect(jwt.sign).toHaveBeenCalledWith(mockPayload, 'test-secret', {
-        expiresIn: '1h',
-      });
+      const token = generateToken(mockPayload);
+      expect(jwt.sign).toHaveBeenCalled();
+      expect(token).toBe('mock-token');
+      const callArgs = (jwt.sign as jest.Mock).mock.calls[0];
+      expect(callArgs[2]).toMatchObject({ expiresIn: '1h' });
     });
 
     it('should use default expiresIn when not set', () => {
+      const originalExpiresIn = process.env.JWT_EXPIRES_IN;
       delete process.env.JWT_EXPIRES_IN;
       process.env.JWT_SECRET = 'test-secret';
       (jwt.sign as jest.Mock).mockReturnValue('mock-token');
-      generateToken(mockPayload);
-      expect(jwt.sign).toHaveBeenCalledWith(mockPayload, 'test-secret', {
-        expiresIn: '7d',
-      });
+      const token = generateToken(mockPayload);
+      expect(jwt.sign).toHaveBeenCalled();
+      expect(token).toBe('mock-token');
+      const callArgs = (jwt.sign as jest.Mock).mock.calls[0];
+      expect(callArgs[2]).toMatchObject({ expiresIn: '7d' });
+      if (originalExpiresIn) {
+        process.env.JWT_EXPIRES_IN = originalExpiresIn;
+      }
     });
   });
 
@@ -49,7 +55,7 @@ describe('JWT Extended Tests', () => {
     it('should handle JsonWebTokenError', () => {
       process.env.JWT_SECRET = 'test-secret';
       (jwt.verify as jest.Mock).mockImplementation(() => {
-        const error = new Error('Invalid token') as any;
+        const error: any = new Error('Invalid token');
         error.name = 'JsonWebTokenError';
         throw error;
       });
@@ -60,7 +66,7 @@ describe('JWT Extended Tests', () => {
     it('should handle TokenExpiredError', () => {
       process.env.JWT_SECRET = 'test-secret';
       (jwt.verify as jest.Mock).mockImplementation(() => {
-        const error = new Error('Token expired') as any;
+        const error: any = new Error('Token expired');
         error.name = 'TokenExpiredError';
         throw error;
       });

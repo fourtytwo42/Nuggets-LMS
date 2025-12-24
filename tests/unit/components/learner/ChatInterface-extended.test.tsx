@@ -59,7 +59,7 @@ describe('ChatInterface Extended Tests', () => {
     const input = screen.getByPlaceholderText('Type your message...') as HTMLInputElement;
 
     fireEvent.change(input, { target: { value: 'Enter test' } });
-    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', charCode: 13 });
+    fireEvent.keyPress(input, { key: 'Enter', code: 'Enter', charCode: 13 });
 
     await waitFor(() => {
       expect(screen.getByText('Enter test')).toBeInTheDocument();
