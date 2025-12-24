@@ -45,7 +45,8 @@ describe('Button Extended Tests', () => {
   it('should handle onClick', () => {
     const handleClick = jest.fn();
     render(<Button onClick={handleClick}>Click me</Button>);
-    fireEvent.click(screen.getByText('Click me'));
+    const button = screen.getByText('Click me');
+    fireEvent.click(button);
     expect(handleClick).toHaveBeenCalledTimes(1);
   });
 

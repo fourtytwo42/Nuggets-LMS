@@ -51,8 +51,9 @@ describe('WebSocket Server Manager', () => {
     };
     (manager as any).connections.set('session-123', mockWs);
 
-    manager.sendToSession('session-123', { type: 'test', data: 'message' });
+    const result = manager.sendToSession('session-123', { type: 'test', data: 'message' });
     expect(mockWs.send).toHaveBeenCalledWith(JSON.stringify({ type: 'test', data: 'message' }));
+    expect(result).toBeUndefined(); // sendToSession doesn't return a value
   });
 
   it('should not send to non-existent session', () => {
@@ -60,6 +61,54 @@ describe('WebSocket Server Manager', () => {
     manager.sendToSession('non-existent', { type: 'test' });
     expect(sendSpy).not.toHaveBeenCalled();
     sendSpy.mockRestore();
+  });
+
+  it('should handle connection without sessionId', () => {
+    const mockWs = {
+      close: jest.fn(),
+      on: jest.fn(),
+    };
+    const mockReq = { url: '/' };
+
+    manager.initialize(mockServer);
+    const connectionHandler = (mockWss.on as jest.Mock).mock.calls.find(
+      (call) => call[0] === 'connection'
+    )?.[1];
+
+    if (connectionHandler) {
+      connectionHandler(mockWs, mockReq);
+      // Connection should be closed if no sessionId
+      expect(mockWs.close).toHaveBeenCalledWith(1008, 'Session ID required');
+    }
+  });
+
+  it('should handle message types', () => {
+    const mockWs = {
+      readyState: WebSocket.OPEN,
+      send: jest.fn(),
+      on: jest.fn(),
+    };
+    const mockReq = { url: '/?sessionId=test-123' };
+
+    manager.initialize(mockServer);
+    const connectionHandler = (mockWss.on as jest.Mock).mock.calls.find(
+      (call) => call[0] === 'connection'
+    )?.[1];
+
+    if (connectionHandler) {
+      connectionHandler(mockWs, mockReq);
+
+      // Get message handler
+      const messageHandler = (mockWs.on as jest.Mock).mock.calls.find(
+        (call) => call[0] === 'message'
+      )?.[1];
+
+      if (messageHandler) {
+        // Test ping message
+        messageHandler(Buffer.from(JSON.stringify({ type: 'ping' })));
+        expect(mockWs.send).toHaveBeenCalled();
+      }
+    }
   });
 
   it('should broadcast to all connections', () => {

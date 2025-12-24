@@ -17,7 +17,8 @@ describe('MediaWidget Extended Tests', () => {
       const { container } = render(
         <MediaWidget type="image" url="/test.jpg" alt="Test" className="custom-class" />
       );
-      expect(container.firstChild).toHaveClass('custom-class');
+      const widget = container.firstChild as HTMLElement;
+      expect(widget).toHaveClass('custom-class');
     });
   });
 
@@ -26,7 +27,7 @@ describe('MediaWidget Extended Tests', () => {
       const { container } = render(<MediaWidget type="audio" url="/test-audio.mp3" />);
       const audio = container.querySelector('audio') as HTMLAudioElement;
       if (audio) {
-        const playSpy = jest.spyOn(audio, 'play').mockImplementation();
+        const playSpy = jest.spyOn(audio, 'play').mockResolvedValue(undefined);
         const pauseSpy = jest.spyOn(audio, 'pause').mockImplementation();
 
         fireEvent.play(audio);

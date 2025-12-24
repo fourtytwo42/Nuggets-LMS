@@ -26,6 +26,7 @@ describe('JWT Extended Tests', () => {
   describe('generateToken', () => {
     it('should generate token with custom expiresIn', () => {
       process.env.JWT_EXPIRES_IN = '1h';
+      process.env.JWT_SECRET = 'test-secret';
       (jwt.sign as jest.Mock).mockReturnValue('mock-token');
       generateToken(mockPayload);
       expect(jwt.sign).toHaveBeenCalledWith(mockPayload, 'test-secret', {
@@ -35,9 +36,10 @@ describe('JWT Extended Tests', () => {
 
     it('should use default expiresIn when not set', () => {
       delete process.env.JWT_EXPIRES_IN;
+      process.env.JWT_SECRET = 'test-secret';
       (jwt.sign as jest.Mock).mockReturnValue('mock-token');
       generateToken(mockPayload);
-      expect(jwt.sign).toHaveBeenCalledWith(mockPayload, expect.any(String), {
+      expect(jwt.sign).toHaveBeenCalledWith(mockPayload, 'test-secret', {
         expiresIn: '7d',
       });
     });
@@ -45,6 +47,7 @@ describe('JWT Extended Tests', () => {
 
   describe('verifyToken', () => {
     it('should handle JsonWebTokenError', () => {
+      process.env.JWT_SECRET = 'test-secret';
       (jwt.verify as jest.Mock).mockImplementation(() => {
         const error = new Error('Invalid token') as any;
         error.name = 'JsonWebTokenError';
@@ -55,6 +58,7 @@ describe('JWT Extended Tests', () => {
     });
 
     it('should handle TokenExpiredError', () => {
+      process.env.JWT_SECRET = 'test-secret';
       (jwt.verify as jest.Mock).mockImplementation(() => {
         const error = new Error('Token expired') as any;
         error.name = 'TokenExpiredError';
