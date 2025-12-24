@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
-import ErrorBoundary from '@/components/ui/ErrorBoundary';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
 // Component that throws an error
 const ThrowError = ({ shouldThrow }: { shouldThrow: boolean }) => {
@@ -10,7 +10,9 @@ const ThrowError = ({ shouldThrow }: { shouldThrow: boolean }) => {
 };
 
 describe('ErrorBoundary Extended Tests', () => {
-  const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+  const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {
+    // Suppress error output in tests
+  });
 
   beforeEach(() => {
     consoleErrorSpy.mockClear();
@@ -56,7 +58,18 @@ describe('ErrorBoundary Extended Tests', () => {
   });
 
   it('should handle reload button click', () => {
-    const reloadSpy = jest.spyOn(window.location, 'reload').mockImplementation();
+    // Mock window.location.reload using Object.defineProperty
+    const reloadSpy = jest.fn();
+    const originalReload = window.location.reload;
+    Object.defineProperty(window, 'location', {
+      value: {
+        ...window.location,
+        reload: reloadSpy,
+      },
+      writable: true,
+      configurable: true,
+    });
+
     render(
       <ErrorBoundary>
         <ThrowError shouldThrow={true} />
@@ -67,7 +80,16 @@ describe('ErrorBoundary Extended Tests', () => {
     fireEvent.click(reloadButton);
 
     expect(reloadSpy).toHaveBeenCalled();
-    reloadSpy.mockRestore();
+
+    // Restore original reload
+    Object.defineProperty(window, 'location', {
+      value: {
+        ...window.location,
+        reload: originalReload,
+      },
+      writable: true,
+      configurable: true,
+    });
   });
 
   it('should render children when no error', () => {

@@ -155,7 +155,8 @@ export class WebSocketServerManager {
    * Send message to WebSocket
    */
   send(ws: WebSocket, message: WSMessage) {
-    if (ws.readyState === WebSocket.OPEN) {
+    // WebSocket.OPEN = 1
+    if (ws.readyState === 1) {
       ws.send(JSON.stringify(message));
     }
   }

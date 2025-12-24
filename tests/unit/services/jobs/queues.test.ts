@@ -3,10 +3,17 @@ import {
   embeddingQueue,
   aiAuthoringQueue,
   narrativeQueue,
+  QueueName,
 } from '@/services/jobs/queues';
 import { Queue } from 'bullmq';
 
-jest.mock('bullmq');
+jest.mock('bullmq', () => ({
+  Queue: jest.fn().mockImplementation((name, options) => ({
+    name,
+    options,
+  })),
+}));
+
 jest.mock('@/lib/redis', () => ({
   getRedisClient: jest.fn(() => ({
     host: 'localhost',
@@ -21,22 +28,22 @@ describe('Job Queues', () => {
 
   it('should create ingestion queue', () => {
     expect(ingestionQueue).toBeDefined();
-    expect(ingestionQueue).toBeInstanceOf(Queue);
+    expect(ingestionQueue.name).toBe(QueueName.INGESTION);
   });
 
   it('should create embedding queue', () => {
     expect(embeddingQueue).toBeDefined();
-    expect(embeddingQueue).toBeInstanceOf(Queue);
+    expect(embeddingQueue.name).toBe(QueueName.EMBEDDING);
   });
 
   it('should create aiAuthoring queue', () => {
     expect(aiAuthoringQueue).toBeDefined();
-    expect(aiAuthoringQueue).toBeInstanceOf(Queue);
+    expect(aiAuthoringQueue.name).toBe(QueueName.AI_AUTHORING);
   });
 
   it('should create narrative queue', () => {
     expect(narrativeQueue).toBeDefined();
-    expect(narrativeQueue).toBeInstanceOf(Queue);
+    expect(narrativeQueue.name).toBe(QueueName.NARRATIVE);
   });
 
   it('should have correct queue names', () => {

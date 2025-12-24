@@ -17,7 +17,11 @@ describe('Redis Client Extended Tests', () => {
 
     (Redis as jest.Mock).mockImplementation(() => mockRedis);
     // Clear singleton
-    (require('@/lib/redis') as any).redis = null;
+    try {
+      (require('@/lib/redis') as any).redis = null;
+    } catch (e) {
+      // Module might not be loaded yet
+    }
   });
 
   afterEach(() => {
@@ -40,37 +44,58 @@ describe('Redis Client Extended Tests', () => {
   it('should use default host and port when not set', () => {
     delete process.env.REDIS_HOST;
     delete process.env.REDIS_PORT;
-    (require('@/lib/redis') as any).redis = null;
-    getRedisClient();
+    const redisModule = require('@/lib/redis');
+    (redisModule as any).redis = null;
+    // Clear mock calls from previous tests
+    (Redis as jest.Mock).mockClear();
+    // Ensure mock implementation is set
+    (Redis as jest.Mock).mockImplementation(() => mockRedis);
+    const client = redisModule.getRedisClient();
     expect(Redis).toHaveBeenCalled();
     const callArgs = (Redis as jest.Mock).mock.calls[0][0];
     expect(callArgs.host).toBe('localhost');
     expect(callArgs.port).toBe(6379);
+    expect(client).toBe(mockRedis);
   });
 
   it('should set up error handler', () => {
-    (require('@/lib/redis') as any).redis = null;
-    getRedisClient();
+    jest.resetModules();
+    const redisModule = require('@/lib/redis');
+    (redisModule as any).redis = null;
+    const client = redisModule.getRedisClient();
     // Error handler is set up in the actual implementation
     // Check that on was called with 'error'
-    const errorCall = mockRedis.on.mock.calls.find((call) => call[0] === 'error');
+    const errorCall = (client.on as jest.Mock).mock.calls.find(
+      (call: any[]) => call[0] === 'error'
+    );
     expect(errorCall).toBeDefined();
   });
 
   it('should set up connect handler', () => {
-    (require('@/lib/redis') as any).redis = null;
-    getRedisClient();
+    jest.resetModules();
+    const redisModule = require('@/lib/redis');
+    (redisModule as any).redis = null;
+    const client = redisModule.getRedisClient();
     // Connect handler is set up in the actual implementation
     // Check that on was called with 'connect'
-    const connectCall = mockRedis.on.mock.calls.find((call) => call[0] === 'connect');
+    const connectCall = (client.on as jest.Mock).mock.calls.find(
+      (call: any[]) => call[0] === 'connect'
+    );
     expect(connectCall).toBeDefined();
   });
 
   it('should close connection', async () => {
-    (require('@/lib/redis') as any).redis = mockRedis;
-    await closeRedisConnection();
+    const redisModule = require('@/lib/redis');
+    // Clear singleton and get a client to set up the singleton
+    (redisModule as any).redis = null;
+    const client = redisModule.getRedisClient();
+    expect(client).toBe(mockRedis);
+    // Clear quit mock calls
+    (mockRedis.quit as jest.Mock).mockClear();
+    // Now close it
+    await redisModule.closeRedisConnection();
     expect(mockRedis.quit).toHaveBeenCalled();
-    expect((require('@/lib/redis') as any).redis).toBeNull();
+    expect((redisModule as any).redis).toBeNull();
   });
 
   it('should return same client instance on subsequent calls', () => {

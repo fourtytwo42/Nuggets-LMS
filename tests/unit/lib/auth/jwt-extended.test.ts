@@ -25,22 +25,38 @@ describe('JWT Extended Tests', () => {
 
   describe('generateToken', () => {
     it('should generate token with custom expiresIn', () => {
+      const originalExpiresIn = process.env.JWT_EXPIRES_IN;
       process.env.JWT_EXPIRES_IN = '1h';
       process.env.JWT_SECRET = 'test-secret';
-      (jwt.sign as jest.Mock).mockReturnValue('mock-token');
-      const token = generateToken(mockPayload);
+      jest.resetModules();
+      // Re-mock jwt after resetModules
+      jest.doMock('jsonwebtoken', () => {
+        const actualJwt = jest.requireActual('jsonwebtoken');
+        return {
+          ...actualJwt,
+          sign: jest.fn().mockReturnValue('mock-token'),
+        };
+      });
+      const jwtModule = require('@/lib/auth/jwt');
+      const jwt = require('jsonwebtoken');
+      const token = jwtModule.generateToken(mockPayload);
       expect(jwt.sign).toHaveBeenCalled();
       expect(token).toBe('mock-token');
       const callArgs = (jwt.sign as jest.Mock).mock.calls[0];
       expect(callArgs[2]).toMatchObject({ expiresIn: '1h' });
+      if (originalExpiresIn) {
+        process.env.JWT_EXPIRES_IN = originalExpiresIn;
+      }
     });
 
     it('should use default expiresIn when not set', () => {
       const originalExpiresIn = process.env.JWT_EXPIRES_IN;
       delete process.env.JWT_EXPIRES_IN;
       process.env.JWT_SECRET = 'test-secret';
+      jest.resetModules();
+      const jwtModule = require('@/lib/auth/jwt');
       (jwt.sign as jest.Mock).mockReturnValue('mock-token');
-      const token = generateToken(mockPayload);
+      const token = jwtModule.generateToken(mockPayload);
       expect(jwt.sign).toHaveBeenCalled();
       expect(token).toBe('mock-token');
       const callArgs = (jwt.sign as jest.Mock).mock.calls[0];
@@ -54,24 +70,31 @@ describe('JWT Extended Tests', () => {
   describe('verifyToken', () => {
     it('should handle JsonWebTokenError', () => {
       process.env.JWT_SECRET = 'test-secret';
+      jest.resetModules();
+      const jwtModule = require('@/lib/auth/jwt');
       (jwt.verify as jest.Mock).mockImplementation(() => {
-        const error: any = new Error('Invalid token');
-        error.name = 'JsonWebTokenError';
+        // Create a proper JsonWebTokenError instance using the actual class
+        const error = new jwt.JsonWebTokenError('Invalid token');
         throw error;
       });
 
-      expect(() => verifyToken('invalid-token')).toThrow('Invalid token');
+      expect(() => jwtModule.verifyToken('invalid-token')).toThrow('Invalid token');
     });
 
     it('should handle TokenExpiredError', () => {
       process.env.JWT_SECRET = 'test-secret';
+      jest.resetModules();
+      const jwtModule = require('@/lib/auth/jwt');
+      // Re-require jwt after resetModules to get the mocked version
+      const jwt = require('jsonwebtoken');
       (jwt.verify as jest.Mock).mockImplementation(() => {
-        const error: any = new Error('Token expired');
-        error.name = 'TokenExpiredError';
+        // Create a proper TokenExpiredError instance using the actual class
+        const actualJwt = jest.requireActual('jsonwebtoken');
+        const error = new actualJwt.TokenExpiredError('Token expired', new Date());
         throw error;
       });
 
-      expect(() => verifyToken('expired-token')).toThrow('Token expired');
+      expect(() => jwtModule.verifyToken('expired-token')).toThrow('Token expired');
     });
 
     it('should handle other errors', () => {

@@ -7,9 +7,10 @@ const mockClose = jest.fn();
 
 jest.mock('ws', () => {
   const actualWs = jest.requireActual('ws');
+  const mockWS = jest.fn();
   return {
     ...actualWs,
-    WebSocketServer: mockWebSocketServer,
+    WebSocketServer: mockWS,
   };
 });
 
@@ -31,32 +32,35 @@ describe('WebSocket Server Manager', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockWss = {
-      on: mockOn,
+      on: jest.fn(),
       clients: new Set(),
-      close: mockClose,
+      close: jest.fn(),
     };
     mockServer = {};
-    mockWebSocketServer.mockReturnValue(mockWss);
+    const wsModule = require('ws');
+    wsModule.WebSocketServer.mockImplementation(() => mockWss);
     manager = new WebSocketServerManager();
   });
 
   it('should initialize WebSocket server', () => {
+    const wsModule = require('ws');
     const result = manager.initialize(mockServer, '/api/ws');
-    expect(mockWebSocketServer).toHaveBeenCalledWith({ server: mockServer, path: '/api/ws' });
-    expect(mockOn).toHaveBeenCalledWith('connection', expect.any(Function));
+    expect(wsModule.WebSocketServer).toHaveBeenCalledWith({ server: mockServer, path: '/api/ws' });
+    expect(mockWss.on).toHaveBeenCalledWith('connection', expect.any(Function));
     expect(result).toBe(mockWss);
   });
 
   it('should not reinitialize if already initialized', () => {
+    const wsModule = require('ws');
     manager.initialize(mockServer);
-    const callCount = mockWebSocketServer.mock.calls.length;
+    const callCount = wsModule.WebSocketServer.mock.calls.length;
     manager.initialize(mockServer);
-    expect(mockWebSocketServer.mock.calls.length).toBe(callCount);
+    expect(wsModule.WebSocketServer.mock.calls.length).toBe(callCount);
   });
 
   it('should send message to specific session', () => {
     const mockWs = {
-      readyState: 1, // WebSocket.OPEN
+      readyState: 1, // WebSocket.OPEN = 1
       send: jest.fn(),
     };
     (manager as any).connections.set('session-123', mockWs);
@@ -79,7 +83,9 @@ describe('WebSocket Server Manager', () => {
     };
 
     manager.initialize(mockServer);
-    const connectionHandler = mockOn.mock.calls.find((call) => call[0] === 'connection')?.[1];
+    const connectionHandler = mockWss.on.mock.calls.find(
+      (call: any[]) => call[0] === 'connection'
+    )?.[1];
 
     if (connectionHandler) {
       // Create a URL without sessionId
@@ -92,18 +98,20 @@ describe('WebSocket Server Manager', () => {
 
   it('should handle message types', () => {
     const mockWs = {
-      readyState: 1,
+      readyState: 1, // WebSocket.OPEN = 1
       send: jest.fn(),
       on: jest.fn(),
     };
 
     manager.initialize(mockServer);
-    const connectionHandler = mockOn.mock.calls.find((call) => call[0] === 'connection')?.[1];
+    const connectionHandler = mockWss.on.mock.calls.find(
+      (call: any[]) => call[0] === 'connection'
+    )?.[1];
 
     if (connectionHandler) {
       connectionHandler(mockWs, { url: '/?sessionId=test-123' });
 
-      const messageHandler = mockWs.on.mock.calls.find((call) => call[0] === 'message')?.[1];
+      const messageHandler = mockWs.on.mock.calls.find((call: any[]) => call[0] === 'message')?.[1];
 
       if (messageHandler) {
         messageHandler(Buffer.from(JSON.stringify({ type: 'ping' })));
@@ -113,20 +121,22 @@ describe('WebSocket Server Manager', () => {
   });
 
   it('should broadcast to all connections', () => {
-    const mockWs1 = { readyState: 1, send: jest.fn() };
-    const mockWs2 = { readyState: 1, send: jest.fn() };
+    const mockWs1 = { readyState: 1, send: jest.fn() }; // WebSocket.OPEN = 1
+    const mockWs2 = { readyState: 1, send: jest.fn() }; // WebSocket.OPEN = 1
     (manager as any).connections.set('session-1', mockWs1);
     (manager as any).connections.set('session-2', mockWs2);
 
-    manager.broadcast({ type: 'broadcast', data: 'message' });
-    expect(mockWs1.send).toHaveBeenCalled();
-    expect(mockWs2.send).toHaveBeenCalled();
+    const message = { type: 'broadcast', data: 'message' };
+    manager.broadcast(message);
+    // The send method checks readyState and stringifies the message
+    expect(mockWs1.send).toHaveBeenCalledWith(JSON.stringify(message));
+    expect(mockWs2.send).toHaveBeenCalledWith(JSON.stringify(message));
   });
 
   it('should close server', () => {
     (manager as any).wss = mockWss;
     manager.close();
-    expect(mockClose).toHaveBeenCalled();
+    expect(mockWss.close).toHaveBeenCalled();
     expect((manager as any).wss).toBeNull();
     expect((manager as any).connections.size).toBe(0);
   });
