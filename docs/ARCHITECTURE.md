@@ -155,6 +155,14 @@ Embeddings stored using pgvector extension for semantic search.
 - Session management
 - Progress tracking
 
+### Cost Tracking Service
+
+- AI API call cost tracking (Gemini, OpenAI)
+- Voice API usage tracking (TTS/STT)
+- Image generation cost tracking (GPT Image token-based)
+- Cost reporting and analytics
+- Usage limit monitoring
+
 ## Background Job Processing
 
 Jobs processed using BullMQ with Redis:

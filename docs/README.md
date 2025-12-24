@@ -47,7 +47,7 @@ AI Microlearning LMS is a zero-human-authoring adaptive microlearning platform. 
 - **Backend:** Node.js 20+, Next.js API Routes, Prisma ORM
 - **Database:** PostgreSQL 15+ (or 17+) with pgvector extension
 - **Queue:** BullMQ with Redis
-- **AI:** Google Gemini 3 Pro/Flash, OpenAI TTS, DALL-E
+- **AI:** Google Gemini 3 Pro/Flash, OpenAI TTS, GPT Image (gpt-image-1-mini)
 - **Process Management:** PM2
 - **Testing:** Jest, Playwright (90%+ coverage requirement)
 
