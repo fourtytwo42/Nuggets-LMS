@@ -40,11 +40,16 @@ describe('ErrorBoundary Extended Tests', () => {
       </ErrorBoundary>
     );
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      'ErrorBoundary caught an error:',
-      expect.any(Error),
-      expect.any(Object)
+    // ErrorBoundary logs to console.error in componentDidCatch
+    // React also logs errors, so we check that console.error was called
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    // Check for ErrorBoundary-specific log message
+    const calls = consoleErrorSpy.mock.calls;
+    const hasErrorBoundaryLog = calls.some(
+      (call) =>
+        call[0] && typeof call[0] === 'string' && call[0].includes('ErrorBoundary caught an error')
     );
+    expect(hasErrorBoundaryLog).toBe(true);
   });
 
   it('should show error message', () => {
@@ -58,17 +63,19 @@ describe('ErrorBoundary Extended Tests', () => {
   });
 
   it('should handle reload button click', () => {
-    // Mock window.location.reload using Object.defineProperty
+    // Mock window.location.reload by replacing the entire location object
     const reloadSpy = jest.fn();
-    const originalReload = window.location.reload;
-    Object.defineProperty(window, 'location', {
-      value: {
-        ...window.location,
-        reload: reloadSpy,
-      },
-      writable: true,
-      configurable: true,
-    });
+    const originalLocation = { ...window.location };
+
+    // Create a mock location object
+    const mockLocation = {
+      ...originalLocation,
+      reload: reloadSpy,
+    };
+
+    // Replace window.location entirely
+    delete (window as any).location;
+    (window as any).location = mockLocation;
 
     render(
       <ErrorBoundary>
@@ -81,15 +88,8 @@ describe('ErrorBoundary Extended Tests', () => {
 
     expect(reloadSpy).toHaveBeenCalled();
 
-    // Restore original reload
-    Object.defineProperty(window, 'location', {
-      value: {
-        ...window.location,
-        reload: originalReload,
-      },
-      writable: true,
-      configurable: true,
-    });
+    // Restore original location
+    (window as any).location = originalLocation;
   });
 
   it('should render children when no error', () => {

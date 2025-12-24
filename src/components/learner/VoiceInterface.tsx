@@ -45,7 +45,11 @@ export default function VoiceInterface({
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
         if (onVoiceMessage) {
-          await onVoiceMessage(audioBlob);
+          try {
+            await onVoiceMessage(audioBlob);
+          } catch (error) {
+            console.error('Error sending voice message:', error);
+          }
         }
         stream.getTracks().forEach((track) => track.stop());
       };
