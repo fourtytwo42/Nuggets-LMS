@@ -198,7 +198,9 @@ export default function AdminConsolePage() {
                 </Link>
               </div>
               <div className="space-y-3">
-                {dashboardData.recentActivity.nuggets.length > 0 ? (
+                {dashboardData.recentActivity?.nuggets &&
+                Array.isArray(dashboardData.recentActivity.nuggets) &&
+                dashboardData.recentActivity.nuggets.length > 0 ? (
                   dashboardData.recentActivity.nuggets.map((nugget) => (
                     <Link
                       key={nugget.id}
@@ -233,7 +235,9 @@ export default function AdminConsolePage() {
                 </Link>
               </div>
               <div className="space-y-3">
-                {dashboardData.recentActivity.sessions.length > 0 ? (
+                {dashboardData.recentActivity?.sessions &&
+                Array.isArray(dashboardData.recentActivity.sessions) &&
+                dashboardData.recentActivity.sessions.length > 0 ? (
                   dashboardData.recentActivity.sessions.map((session) => (
                     <div key={session.id} className="p-3 bg-gray-50 rounded">
                       <p className="text-sm font-medium text-gray-900">{session.learnerName}</p>
@@ -265,7 +269,9 @@ export default function AdminConsolePage() {
                 </Link>
               </div>
               <div className="space-y-3">
-                {dashboardData.recentActivity.jobs.length > 0 ? (
+                {dashboardData.recentActivity?.jobs &&
+                Array.isArray(dashboardData.recentActivity.jobs) &&
+                dashboardData.recentActivity.jobs.length > 0 ? (
                   dashboardData.recentActivity.jobs.map((job) => (
                     <div key={job.id} className="p-3 bg-gray-50 rounded">
                       <div className="flex justify-between items-start mb-1">

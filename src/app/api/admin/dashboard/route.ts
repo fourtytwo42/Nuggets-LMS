@@ -137,20 +137,21 @@ export async function GET(request: NextRequest) {
           processingJobs,
         },
         recentActivity: {
-          nuggets: recentNuggets.map((n) => ({
+          nuggets: (recentNuggets || []).map((n) => ({
             id: n.id,
-            content: n.content.substring(0, 100) + (n.content.length > 100 ? '...' : ''),
+            content:
+              (n.content || '').substring(0, 100) + ((n.content || '').length > 100 ? '...' : ''),
             status: n.status,
             createdAt: n.createdAt,
           })),
-          sessions: recentSessions.map((s) => ({
+          sessions: (recentSessions || []).map((s) => ({
             id: s.id,
-            learnerName: s.learner.user.name,
-            learnerEmail: s.learner.user.email,
+            learnerName: s.learner?.user?.name || 'Unknown',
+            learnerEmail: s.learner?.user?.email || '',
             mode: s.mode,
             startedAt: s.startedAt,
           })),
-          jobs: recentJobs.map((j) => ({
+          jobs: (recentJobs || []).map((j) => ({
             id: j.id,
             type: j.type,
             source: j.source,
