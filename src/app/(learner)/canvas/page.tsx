@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useSession } from '@/hooks/useSession';
 import dynamicImport from 'next/dynamic';
@@ -27,9 +27,57 @@ export default function LearnerCanvasPage() {
   const router = useRouter();
   const sessionIdParam = searchParams.get('sessionId');
   const { session, isLoading, error, getOrCreateSession, getSession } = useSession();
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [isCheckingRole, setIsCheckingRole] = useState(true);
+
+  // Check user role on mount
+  useEffect(() => {
+    const checkUserRole = async () => {
+      try {
+        const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+        if (!token) {
+          router.push('/login');
+          return;
+        }
+
+        const response = await fetch('/api/auth/me', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (response.ok) {
+          const userData = await response.json();
+          const role = userData.role;
+
+          // Redirect admins/instructors to console
+          if (role === 'admin' || role === 'instructor') {
+            router.push('/console');
+            return;
+          }
+
+          setUserRole(role);
+        } else {
+          router.push('/login');
+        }
+      } catch (err) {
+        console.error('Error checking user role:', err);
+        router.push('/login');
+      } finally {
+        setIsCheckingRole(false);
+      }
+    };
+
+    checkUserRole();
+  }, [router]);
 
   useEffect(() => {
     const initializeSession = async () => {
+      // Don't initialize session if user is admin/instructor
+      if (userRole === 'admin' || userRole === 'instructor') {
+        return;
+      }
+
       try {
         if (sessionIdParam) {
           // Use provided session ID
@@ -43,10 +91,41 @@ export default function LearnerCanvasPage() {
       }
     };
 
-    if (!session && !isLoading) {
+    if (!session && !isLoading && userRole === 'learner' && !isCheckingRole) {
       initializeSession();
     }
-  }, [sessionIdParam, session, isLoading, getSession, getOrCreateSession]);
+  }, [
+    sessionIdParam,
+    session,
+    isLoading,
+    userRole,
+    isCheckingRole,
+    getSession,
+    getOrCreateSession,
+  ]);
+
+  // Show loading while checking role
+  if (isCheckingRole) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't show learner content if user is admin/instructor (they should be redirected)
+  if (userRole === 'admin' || userRole === 'instructor') {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <p className="text-gray-600 mb-4">Redirecting to admin console...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

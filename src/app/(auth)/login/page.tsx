@@ -41,8 +41,13 @@ export default function LoginPage() {
         localStorage.setItem('token', data.token);
       }
 
-      // Redirect to canvas
-      router.push('/canvas');
+      // Redirect based on user role
+      const userRole = data.user?.role;
+      if (userRole === 'admin' || userRole === 'instructor') {
+        router.push('/console');
+      } else {
+        router.push('/canvas');
+      }
     } catch (err) {
       setError('An error occurred. Please try again.');
       setIsLoading(false);
