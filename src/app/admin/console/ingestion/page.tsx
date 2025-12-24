@@ -254,18 +254,16 @@ export default function IngestionManagementPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
+      <main className="container mx-auto px-4 py-8">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </main>
     );
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="mb-6 flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-900">Content Ingestion Management</h1>
-      </div>
-
+    <main className="container mx-auto px-4 py-8">
       {/* Ingestion Jobs */}
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
         <div className="flex justify-between items-center mb-4">
@@ -529,7 +527,7 @@ export default function IngestionManagementPage() {
           onCancel={handleCancelJob}
         />
       )}
-    </div>
+    </main>
   );
 }
 

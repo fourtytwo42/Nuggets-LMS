@@ -196,7 +196,7 @@ export default function AnalyticsPage() {
   ];
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <main className="container mx-auto px-4 py-8">
       <div className="mb-6 flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">Analytics Dashboard</h1>
         <div className="flex space-x-2">
@@ -396,6 +396,6 @@ export default function AnalyticsPage() {
           </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

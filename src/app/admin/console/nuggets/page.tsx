@@ -110,7 +110,7 @@ export default function NuggetStorePage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <main className="container mx-auto px-4 py-8">
       <div className="mb-6 flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">Nugget Store</h1>
         <Button>Create Nugget</Button>
@@ -233,6 +233,6 @@ export default function NuggetStorePage() {
           </div>
         </div>
       )}
-    </div>
+    </main>
   );
 }
