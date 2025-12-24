@@ -44,7 +44,7 @@ export default function LoginPage() {
       // Redirect based on user role
       const userRole = data.user?.role;
       if (userRole === 'admin' || userRole === 'instructor') {
-        router.push('/console');
+        router.push('/admin/console');
       } else {
         router.push('/canvas');
       }

@@ -52,7 +52,7 @@ export default function LearnerCanvasPage() {
 
           // Redirect admins/instructors to console
           if (role === 'admin' || role === 'instructor') {
-            router.push('/console');
+            router.push('/admin/console');
             return;
           }
 
