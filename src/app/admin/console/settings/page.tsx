@@ -175,14 +175,33 @@ export default function SettingsPage() {
     );
   }
 
-  if (!settings) {
+  if (isLoading) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!settings && !error) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <p className="text-yellow-800">No settings found. Loading defaults...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!settings && error) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="text-red-800">Failed to load settings. Please try again.</p>
-          <Button onClick={fetchSettings} className="mt-4">
-            Retry
-          </Button>
+          <p className="text-red-800 mb-2">Failed to load settings. Please try again.</p>
+          {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
+          <Button onClick={fetchSettings}>Retry</Button>
         </div>
       </div>
     );
