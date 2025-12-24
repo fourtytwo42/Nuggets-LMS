@@ -40,8 +40,10 @@ describe('Redis Client Extended Tests', () => {
   it('should use default host and port when not set', () => {
     delete process.env.REDIS_HOST;
     delete process.env.REDIS_PORT;
-    (require('@/lib/redis') as any).redis = null;
-    const client = getRedisClient();
+    jest.resetModules();
+    const redisModule = require('@/lib/redis');
+    (redisModule as any).redis = null;
+    const client = redisModule.getRedisClient();
     expect(Redis).toHaveBeenCalledWith(
       expect.objectContaining({
         host: 'localhost',
@@ -54,17 +56,21 @@ describe('Redis Client Extended Tests', () => {
   });
 
   it('should set up error handler', () => {
-    (require('@/lib/redis') as any).redis = null;
-    const client = getRedisClient();
+    jest.resetModules();
+    const redisModule = require('@/lib/redis');
+    (redisModule as any).redis = null;
+    const client = redisModule.getRedisClient();
     // Error handler is set up in the actual implementation
-    expect(mockRedis.on).toHaveBeenCalled();
+    expect(mockRedis.on).toHaveBeenCalledWith('error', expect.any(Function));
   });
 
   it('should set up connect handler', () => {
-    (require('@/lib/redis') as any).redis = null;
-    const client = getRedisClient();
+    jest.resetModules();
+    const redisModule = require('@/lib/redis');
+    (redisModule as any).redis = null;
+    const client = redisModule.getRedisClient();
     // Connect handler is set up in the actual implementation
-    expect(mockRedis.on).toHaveBeenCalled();
+    expect(mockRedis.on).toHaveBeenCalledWith('connect', expect.any(Function));
   });
 
   it('should close connection', async () => {
