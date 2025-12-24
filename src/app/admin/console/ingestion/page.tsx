@@ -86,7 +86,7 @@ export default function IngestionManagementPage() {
       });
       if (response.ok) {
         const data = await response.json();
-        setFolders(data);
+        setFolders(Array.isArray(data.folders) ? data.folders : []);
       }
     } catch (error) {
       console.error('Error fetching folders:', error);
@@ -105,7 +105,7 @@ export default function IngestionManagementPage() {
       });
       if (response.ok) {
         const data = await response.json();
-        setUrls(data);
+        setUrls(Array.isArray(data.urls) ? data.urls : []);
       }
     } catch (error) {
       console.error('Error fetching URLs:', error);
@@ -134,8 +134,8 @@ export default function IngestionManagementPage() {
 
       if (response.ok) {
         const data = await response.json();
-        setJobs(data.jobs);
-        setJobPagination(data.pagination);
+        setJobs(Array.isArray(data.jobs) ? data.jobs : []);
+        setJobPagination(data.pagination || { total: 0, totalPages: 0, page: 1, pageSize: 20 });
       }
     } catch (error) {
       console.error('Error fetching jobs:', error);
@@ -345,58 +345,68 @@ export default function IngestionManagementPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {jobs.map((job) => (
-                <tr key={job.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900 truncate max-w-xs">
-                      {job.source}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-800">
-                      {job.type}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span
-                      className={`px-2 py-1 text-xs font-medium rounded ${getStatusColor(job.status)}`}
-                    >
-                      {job.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {job.nuggetCount ?? '-'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(job.createdAt).toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex space-x-2">
-                      <Button variant="ghost" size="sm" onClick={() => openJobDetails(job)}>
-                        Details
-                      </Button>
-                      {job.status === 'failed' && (
-                        <Button variant="outline" size="sm" onClick={() => handleRetryJob(job.id)}>
-                          Retry
+              {Array.isArray(jobs) && jobs.length > 0 ? (
+                jobs.map((job) => (
+                  <tr key={job.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900 truncate max-w-xs">
+                        {job.source}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-800">
+                        {job.type}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span
+                        className={`px-2 py-1 text-xs font-medium rounded ${getStatusColor(job.status)}`}
+                      >
+                        {job.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {job.nuggetCount ?? '-'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      {new Date(job.createdAt).toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex space-x-2">
+                        <Button variant="ghost" size="sm" onClick={() => openJobDetails(job)}>
+                          Details
                         </Button>
-                      )}
-                      {job.status === 'pending' && (
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleCancelJob(job.id)}
-                        >
-                          Cancel
-                        </Button>
-                      )}
-                    </div>
+                        {job.status === 'failed' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRetryJob(job.id)}
+                          >
+                            Retry
+                          </Button>
+                        )}
+                        {job.status === 'pending' && (
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => handleCancelJob(job.id)}
+                          >
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={6} className="px-6 py-4 text-center text-gray-500">
+                    No jobs found
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
-
-          {jobs.length === 0 && <p className="text-gray-500 text-center py-4">No jobs found</p>}
 
           {/* Pagination */}
           {jobPagination.totalPages > 1 && (
@@ -436,28 +446,29 @@ export default function IngestionManagementPage() {
           <Button onClick={() => setShowFolderModal(true)}>Add Folder</Button>
         </div>
         <div className="space-y-2">
-          {folders.map((folder) => (
-            <div
-              key={folder.id}
-              className="flex justify-between items-center p-3 bg-gray-50 rounded"
-            >
-              <div>
-                <p className="font-medium">{folder.path}</p>
-                <p className="text-sm text-gray-600">
-                  Types: {folder.fileTypes.join(', ')} | Recursive:{' '}
-                  {folder.recursive ? 'Yes' : 'No'}
-                </p>
-              </div>
-              <span
-                className={`px-2 py-1 rounded text-sm ${
-                  folder.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                }`}
+          {Array.isArray(folders) && folders.length > 0 ? (
+            folders.map((folder) => (
+              <div
+                key={folder.id}
+                className="flex justify-between items-center p-3 bg-gray-50 rounded"
               >
-                {folder.enabled ? 'Enabled' : 'Disabled'}
-              </span>
-            </div>
-          ))}
-          {folders.length === 0 && (
+                <div>
+                  <p className="font-medium">{folder.path}</p>
+                  <p className="text-sm text-gray-600">
+                    Types: {folder.fileTypes.join(', ')} | Recursive:{' '}
+                    {folder.recursive ? 'Yes' : 'No'}
+                  </p>
+                </div>
+                <span
+                  className={`px-2 py-1 rounded text-sm ${
+                    folder.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                  }`}
+                >
+                  {folder.enabled ? 'Enabled' : 'Disabled'}
+                </span>
+              </div>
+            ))
+          ) : (
             <p className="text-gray-500 text-center py-4">No watched folders configured</p>
           )}
         </div>
@@ -470,25 +481,29 @@ export default function IngestionManagementPage() {
           <Button onClick={() => setShowURLModal(true)}>Add URL</Button>
         </div>
         <div className="space-y-2">
-          {urls.map((url) => (
-            <div key={url.id} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-              <div>
-                <p className="font-medium">{url.url}</p>
-                <p className="text-sm text-gray-600">
-                  Check interval: {url.checkInterval} minutes | Last checked:{' '}
-                  {url.lastChecked ? new Date(url.lastChecked).toLocaleString() : 'Never'}
-                </p>
-              </div>
-              <span
-                className={`px-2 py-1 rounded text-sm ${
-                  url.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                }`}
+          {Array.isArray(urls) && urls.length > 0 ? (
+            urls.map((url) => (
+              <div
+                key={url.id}
+                className="flex justify-between items-center p-3 bg-gray-50 rounded"
               >
-                {url.enabled ? 'Enabled' : 'Disabled'}
-              </span>
-            </div>
-          ))}
-          {urls.length === 0 && (
+                <div>
+                  <p className="font-medium">{url.url}</p>
+                  <p className="text-sm text-gray-600">
+                    Check interval: {url.checkInterval} minutes | Last checked:{' '}
+                    {url.lastChecked ? new Date(url.lastChecked).toLocaleString() : 'Never'}
+                  </p>
+                </div>
+                <span
+                  className={`px-2 py-1 rounded text-sm ${
+                    url.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                  }`}
+                >
+                  {url.enabled ? 'Enabled' : 'Disabled'}
+                </span>
+              </div>
+            ))
+          ) : (
             <p className="text-gray-500 text-center py-4">No monitored URLs configured</p>
           )}
         </div>
