@@ -197,6 +197,11 @@ export default function SettingsPage() {
     );
   }
 
+  // TypeScript guard: settings must be non-null at this point
+  if (!settings) {
+    return null;
+  }
+
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Settings</h1>
