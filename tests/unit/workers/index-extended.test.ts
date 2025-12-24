@@ -1,3 +1,20 @@
+// Mock cheerio to avoid ES module issues
+jest.mock('cheerio', () => {
+  const mockText = jest.fn(() => 'Mocked text content');
+  const mockRemove = jest.fn().mockReturnThis();
+  const cheerioInstance = jest.fn((selector: string) => {
+    if (selector === 'script, style') {
+      return { remove: mockRemove };
+    }
+    return { text: mockText };
+  }) as any;
+  cheerioInstance.text = mockText;
+  cheerioInstance.remove = mockRemove;
+  return {
+    load: jest.fn(() => cheerioInstance),
+  };
+});
+
 // Mock dependencies BEFORE imports
 jest.mock('@/lib/redis', () => ({
   getRedisClient: jest.fn(() => ({})),
@@ -56,7 +73,12 @@ describe('Workers - Extended Coverage', () => {
     if (completedHandler) {
       const mockJob = { id: 'job-123' };
       completedHandler(mockJob);
-      expect(logger.info).toHaveBeenCalledWith('Worker job completed: job-123');
+      expect(logger.info).toHaveBeenCalledWith(
+        'Worker job completed: job-123',
+        expect.objectContaining({
+          jobId: 'job-123',
+        })
+      );
     }
   });
 
@@ -68,9 +90,13 @@ describe('Workers - Extended Coverage', () => {
       const mockJob = { id: 'job-123' };
       const mockError = new Error('Job failed');
       failedHandler(mockJob, mockError);
-      expect(logger.error).toHaveBeenCalledWith('Worker job failed: job-123', {
-        error: 'Job failed',
-      });
+      expect(logger.error).toHaveBeenCalledWith(
+        'Worker job failed: job-123',
+        expect.objectContaining({
+          jobId: 'job-123',
+          error: 'Job failed',
+        })
+      );
     }
   });
 

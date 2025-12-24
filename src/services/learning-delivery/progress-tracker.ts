@@ -39,11 +39,21 @@ export class ProgressTrackerService {
         data: { masteryMap: masteryMap as any },
       });
 
-      // Create progress record
-      await prisma.progress.create({
-        data: {
+      // Create or update progress record
+      await prisma.progress.upsert({
+        where: {
+          learnerId_concept: {
+            learnerId,
+            concept,
+          },
+        },
+        create: {
           learnerId,
           concept,
+          masteryLevel: clampedMastery,
+          evidence: `Updated via progress tracker`,
+        },
+        update: {
           masteryLevel: clampedMastery,
           evidence: `Updated via progress tracker`,
         },

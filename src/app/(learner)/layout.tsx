@@ -5,6 +5,9 @@ export const metadata: Metadata = {
   description: 'Learning interface',
 };
 
+// Force dynamic rendering for learner routes
+export const dynamic = 'force-dynamic';
+
 export default function LearnerLayout({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }

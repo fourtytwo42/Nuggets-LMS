@@ -3,6 +3,7 @@ import logger from '@/lib/logger';
 import fs from 'fs/promises';
 import path from 'path';
 import type { Nugget } from '@prisma/client';
+import { costTracker } from '@/services/analytics/cost-tracker';
 
 let openaiClient: OpenAI | null = null;
 
@@ -93,6 +94,10 @@ export class AudioGeneratorService {
 
       // Convert response to buffer
       const buffer = Buffer.from(await response.arrayBuffer());
+
+      // Track TTS costs (per 1,000 characters)
+      const characterCount = script.length;
+      await costTracker.trackVoiceUsage('openai', 'tts', characterCount, organizationId);
 
       // Save audio file
       const savedPath = await this.saveAudioFile(buffer, nuggetId, organizationId);

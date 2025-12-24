@@ -18,9 +18,60 @@ interface ChatInterfaceProps {
 
 export default function ChatInterface({ sessionId, onSendMessage }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+
+  // Get token from localStorage
+  const getToken = () => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('token');
+    }
+    return null;
+  };
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Fetch messages on mount and when sessionId changes
+  useEffect(() => {
+    const fetchMessages = async () => {
+      const token = getToken();
+      if (!sessionId || !token) return;
+
+      try {
+        setIsLoadingMessages(true);
+        const response = await fetch(`/api/learning/sessions/${sessionId}/messages`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch messages');
+        }
+
+        const data = await response.json();
+        const fetchedMessages = (data.messages || []).map((msg: any) => ({
+          id: msg.id,
+          role: msg.role,
+          content: msg.content,
+          timestamp: new Date(msg.createdAt),
+        }));
+
+        setMessages(fetchedMessages);
+      } catch (err) {
+        console.error('Error fetching messages:', err);
+      } finally {
+        setIsLoadingMessages(false);
+      }
+    };
+
+    fetchMessages();
+
+    // Refresh messages periodically
+    const interval = setInterval(fetchMessages, 10000); // Every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [sessionId]);
 
   useEffect(() => {
     // Scroll to bottom when new messages arrive
@@ -30,7 +81,8 @@ export default function ChatInterface({ sessionId, onSendMessage }: ChatInterfac
   }, [messages]);
 
   const handleSend = async () => {
-    if (!inputValue.trim() || isLoading) return;
+    const token = getToken();
+    if (!inputValue.trim() || isLoading || !token) return;
 
     const userMessage: ChatMessage = {
       id: `msg-${Date.now()}`,
@@ -47,22 +99,52 @@ export default function ChatInterface({ sessionId, onSendMessage }: ChatInterfac
     try {
       if (onSendMessage) {
         await onSendMessage(messageToSend);
-        setIsLoading(false);
+        // Fetch updated messages after sending
+        const response = await fetch(`/api/learning/sessions/${sessionId}/messages`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const fetchedMessages = (data.messages || []).map((msg: any) => ({
+            id: msg.id,
+            role: msg.role,
+            content: msg.content,
+            timestamp: new Date(msg.createdAt),
+          }));
+          setMessages(fetchedMessages);
+        }
       } else {
-        // Default: simulate AI response
-        setTimeout(() => {
-          const aiMessage: ChatMessage = {
-            id: `msg-${Date.now() + 1}`,
+        // Fallback: send directly to API
+        const response = await fetch(`/api/learning/sessions/${sessionId}/messages`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ content: messageToSend }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const assistantMessage: ChatMessage = {
+            id: data.message?.id || `msg-${Date.now() + 1}`,
             role: 'assistant',
-            content: 'This is a placeholder response. AI tutor integration coming soon.',
-            timestamp: new Date(),
+            content: data.message?.content || 'Response received',
+            timestamp: new Date(data.message?.createdAt || Date.now()),
           };
-          setMessages((prev) => [...prev, aiMessage]);
-          setIsLoading(false);
-        }, 100);
+          setMessages((prev) => [...prev, assistantMessage]);
+        } else {
+          throw new Error('Failed to send message');
+        }
       }
     } catch (error) {
       console.error('Error sending message:', error);
+      // Remove user message on error
+      setMessages((prev) => prev.filter((msg) => msg.id !== userMessage.id));
+    } finally {
       setIsLoading(false);
     }
   };
@@ -75,10 +157,15 @@ export default function ChatInterface({ sessionId, onSendMessage }: ChatInterfac
   };
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-lg shadow-md">
+    <div className="flex flex-col h-full bg-white">
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 ? (
+        {isLoadingMessages ? (
+          <div className="text-center text-gray-500 mt-8">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-2">Loading messages...</p>
+          </div>
+        ) : messages.length === 0 ? (
           <div className="text-center text-gray-500 mt-8">
             <p>Start a conversation with your AI tutor</p>
           </div>

@@ -1,4 +1,4 @@
-import { getGeminiClient } from '@/lib/ai/gemini';
+import { getGeminiClient, trackGeminiCost } from '@/lib/ai/gemini';
 import logger from '@/lib/logger';
 import type { Nugget } from '@prisma/client';
 
@@ -35,6 +35,17 @@ export class SlideGeneratorService {
       const result = await model.generateContent(prompt);
       const response = result.response;
       const text = response.text();
+
+      // Track costs
+      const usageMetadata = (result.response as any).usageMetadata;
+      await trackGeminiCost(
+        'gemini-2.0-flash-exp',
+        prompt,
+        text,
+        nugget.organizationId,
+        undefined, // No learnerId for content generation
+        usageMetadata
+      );
 
       // Parse slides from response
       const slides = this.parseSlidesFromResponse(text, nugget.content);

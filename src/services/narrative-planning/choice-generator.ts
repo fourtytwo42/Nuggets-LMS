@@ -1,4 +1,4 @@
-import { getGeminiClient } from '@/lib/ai/gemini';
+import { getGeminiClient, trackGeminiCost } from '@/lib/ai/gemini';
 import { prisma } from '@/lib/prisma';
 import logger from '@/lib/logger';
 import type { NarrativeNode } from '@prisma/client';
@@ -71,8 +71,19 @@ export class ChoiceGeneratorService {
       const response = result.response;
       const text = response.text();
 
+      // Track costs
+      const usageMetadata = (result.response as any).usageMetadata;
+      await trackGeminiCost(
+        'gemini-2.0-flash-exp',
+        prompt,
+        text,
+        node.organizationId,
+        undefined, // No learnerId for narrative planning
+        usageMetadata
+      );
+
       // Parse choices from response
-      return this.parseChoicesFromResponse(text, availableNodes);
+      return this.parseChoicesFromResponse(text, availableNodes, node);
     } catch (error) {
       logger.warn('Error generating choices with AI, using fallback', {
         error: error instanceof Error ? error.message : String(error),
@@ -132,7 +143,8 @@ Return ONLY valid JSON, no markdown formatting.`;
    */
   private parseChoicesFromResponse(
     responseText: string,
-    availableNodes: NarrativeNode[]
+    availableNodes: NarrativeNode[],
+    node: NarrativeNode
   ): Choice[] {
     try {
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
@@ -154,10 +166,7 @@ Return ONLY valid JSON, no markdown formatting.`;
       });
     }
 
-    return this.generateFallbackChoices(
-      { id: '', nuggetId: '', organizationId: '', adaptsTo: [] } as NarrativeNode,
-      availableNodes
-    );
+    return this.generateFallbackChoices(node, availableNodes);
   }
 
   /**

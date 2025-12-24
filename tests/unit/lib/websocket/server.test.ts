@@ -144,4 +144,99 @@ describe('WebSocket Server Manager', () => {
   it('should export singleton instance', () => {
     expect(wsServerManager).toBeInstanceOf(WebSocketServerManager);
   });
+
+  describe('Voice handlers', () => {
+    let mockWs: any;
+    let mockPrisma: any;
+    let mockVoiceService: any;
+
+    beforeEach(() => {
+      mockWs = {
+        readyState: 1, // WebSocket.OPEN = 1
+        send: jest.fn(),
+        on: jest.fn(),
+        sessionId: 'session-123',
+        userId: 'user-123',
+        organizationId: 'org-123',
+      };
+
+      mockPrisma = {
+        session: {
+          findFirst: jest.fn(),
+        },
+      };
+
+      mockVoiceService = {
+        startVoiceSession: jest.fn().mockResolvedValue(undefined),
+        stopVoiceSession: jest.fn().mockResolvedValue(undefined),
+        processVoiceInput: jest.fn().mockResolvedValue({
+          audio: 'base64audio',
+          text: 'AI response',
+          format: 'mp3',
+        }),
+      };
+
+      jest.mock('@/lib/prisma', () => ({
+        prisma: mockPrisma,
+      }));
+
+      jest.mock('@/services/learning-delivery/voice-service', () => ({
+        voiceService: mockVoiceService,
+      }));
+    });
+
+    it('should handle voice start event', async () => {
+      manager.initialize(mockServer);
+      const connectionHandler = mockWss.on.mock.calls.find(
+        (call: any[]) => call[0] === 'connection'
+      )?.[1];
+
+      if (connectionHandler) {
+        // Mock authenticated connection
+        const req = { url: '/?sessionId=session-123&token=valid-token' };
+        // Mock verifyToken to return valid user
+        jest.doMock('@/lib/auth/jwt', () => ({
+          verifyToken: jest.fn().mockReturnValue({
+            userId: 'user-123',
+            email: 'test@example.com',
+            role: 'learner',
+            organizationId: 'org-123',
+          }),
+        }));
+
+        // Mock session lookup
+        jest.doMock('@/lib/prisma', () => ({
+          prisma: {
+            session: {
+              findFirst: jest.fn().mockResolvedValue({
+                id: 'session-123',
+                learnerId: 'learner-123',
+                organizationId: 'org-123',
+              }),
+            },
+          },
+        }));
+
+        connectionHandler(mockWs, req);
+
+        const messageHandler = mockWs.on.mock.calls.find(
+          (call: any[]) => call[0] === 'message'
+        )?.[1];
+
+        if (messageHandler) {
+          await messageHandler(
+            Buffer.from(
+              JSON.stringify({
+                event: 'session:voice:start',
+                data: {},
+              })
+            )
+          );
+
+          // Should send voice started event
+          expect(mockWs.send).toHaveBeenCalled();
+        }
+      }
+    });
+  });
 });

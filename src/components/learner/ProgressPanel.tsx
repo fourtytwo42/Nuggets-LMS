@@ -19,17 +19,55 @@ export default function ProgressPanel({ sessionId, onProgressUpdate }: ProgressP
   });
 
   useEffect(() => {
-    // Fetch progress data (would use API in real implementation)
-    // For now, use mock data
-    setProgress({
-      masteryMap: {
-        'Machine Learning': 75,
-        'Data Science': 60,
-        Python: 80,
-      },
-      knowledgeGaps: ['Statistics', 'Linear Algebra'],
-    });
+    fetchProgress();
   }, [sessionId]);
+
+  const fetchProgress = async () => {
+    try {
+      const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+      if (!token) {
+        return;
+      }
+
+      // Get progress data from session progress endpoint
+      const progressResponse = await fetch(`/api/learning/sessions/${sessionId}/progress`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (progressResponse.ok) {
+        const progressData = await progressResponse.json();
+
+        // Convert concepts array to masteryMap
+        const masteryMap: Record<string, number> = {};
+        if (progressData.concepts) {
+          progressData.concepts.forEach((concept: { concept: string; masteryLevel: number }) => {
+            masteryMap[concept.concept] = concept.masteryLevel;
+          });
+        }
+
+        setProgress({
+          masteryMap,
+          knowledgeGaps: progressData.knowledgeGaps || [],
+        });
+
+        if (onProgressUpdate) {
+          onProgressUpdate({
+            masteryMap,
+            knowledgeGaps: progressData.knowledgeGaps || [],
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching progress:', error);
+      // Fallback to empty progress on error
+      setProgress({
+        masteryMap: {},
+        knowledgeGaps: [],
+      });
+    }
+  };
 
   return (
     <div className="bg-white rounded-lg shadow-md p-6">

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
+import { Select } from '@/components/ui/Select';
 
 interface WatchedFolder {
   id: string;
@@ -21,21 +22,68 @@ interface MonitoredURL {
   lastChecked: Date | null;
 }
 
+interface IngestionJob {
+  id: string;
+  type: string;
+  source: string;
+  status: string;
+  nuggetCount: number | null;
+  errorMessage: string | null;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  createdAt: Date;
+  metadata: any;
+}
+
 export default function IngestionManagementPage() {
   const [folders, setFolders] = useState<WatchedFolder[]>([]);
   const [urls, setUrls] = useState<MonitoredURL[]>([]);
+  const [jobs, setJobs] = useState<IngestionJob[]>([]);
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [showURLModal, setShowURLModal] = useState(false);
+  const [showJobDetailsModal, setShowJobDetailsModal] = useState(false);
+  const [selectedJob, setSelectedJob] = useState<IngestionJob | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [jobFilter, setJobFilter] = useState<{ status?: string; type?: string }>({});
+  const [jobPage, setJobPage] = useState(1);
+  const [jobPagination, setJobPagination] = useState({
+    total: 0,
+    totalPages: 0,
+    page: 1,
+    pageSize: 20,
+  });
+
+  // Get token from localStorage
+  const getToken = () => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('token');
+    }
+    return null;
+  };
 
   useEffect(() => {
     fetchFolders();
     fetchURLs();
+    fetchJobs();
   }, []);
+
+  // Poll for job updates every 5 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchJobs();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [jobFilter, jobPage]);
 
   const fetchFolders = async () => {
     try {
-      const response = await fetch('/api/admin/ingestion/folders');
+      const token = getToken();
+      const response = await fetch('/api/admin/ingestion/folders', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
       if (response.ok) {
         const data = await response.json();
         setFolders(data);
@@ -49,7 +97,12 @@ export default function IngestionManagementPage() {
 
   const fetchURLs = async () => {
     try {
-      const response = await fetch('/api/admin/ingestion/urls');
+      const token = getToken();
+      const response = await fetch('/api/admin/ingestion/urls', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
       if (response.ok) {
         const data = await response.json();
         setUrls(data);
@@ -59,11 +112,45 @@ export default function IngestionManagementPage() {
     }
   };
 
+  const fetchJobs = async () => {
+    try {
+      const token = getToken();
+      const params = new URLSearchParams({
+        page: jobPage.toString(),
+        pageSize: '20',
+      });
+      if (jobFilter.status) {
+        params.append('status', jobFilter.status);
+      }
+      if (jobFilter.type) {
+        params.append('type', jobFilter.type);
+      }
+
+      const response = await fetch(`/api/admin/ingestion/jobs?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setJobs(data.jobs);
+        setJobPagination(data.pagination);
+      }
+    } catch (error) {
+      console.error('Error fetching jobs:', error);
+    }
+  };
+
   const handleAddFolder = async (path: string, fileTypes: string[], recursive: boolean) => {
     try {
+      const token = getToken();
       const response = await fetch('/api/admin/ingestion/folders', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ path, fileTypes, recursive }),
       });
 
@@ -78,9 +165,13 @@ export default function IngestionManagementPage() {
 
   const handleAddURL = async (url: string, checkInterval: number) => {
     try {
+      const token = getToken();
       const response = await fetch('/api/admin/ingestion/urls', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ url, checkInterval }),
       });
 
@@ -90,6 +181,74 @@ export default function IngestionManagementPage() {
       }
     } catch (error) {
       console.error('Error adding URL:', error);
+    }
+  };
+
+  const handleRetryJob = async (jobId: string) => {
+    try {
+      const token = getToken();
+      const response = await fetch(`/api/admin/ingestion/jobs/${jobId}/retry`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        await fetchJobs();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to retry job');
+      }
+    } catch (error) {
+      console.error('Error retrying job:', error);
+      alert('Failed to retry job');
+    }
+  };
+
+  const handleCancelJob = async (jobId: string) => {
+    if (!confirm('Are you sure you want to cancel this job?')) {
+      return;
+    }
+
+    try {
+      const token = getToken();
+      const response = await fetch(`/api/admin/ingestion/jobs/${jobId}/cancel`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        await fetchJobs();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to cancel job');
+      }
+    } catch (error) {
+      console.error('Error cancelling job:', error);
+      alert('Failed to cancel job');
+    }
+  };
+
+  const openJobDetails = (job: IngestionJob) => {
+    setSelectedJob(job);
+    setShowJobDetailsModal(true);
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'bg-green-100 text-green-800';
+      case 'processing':
+        return 'bg-blue-100 text-blue-800';
+      case 'failed':
+        return 'bg-red-100 text-red-800';
+      case 'pending':
+        return 'bg-yellow-100 text-yellow-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
     }
   };
 
@@ -105,6 +264,169 @@ export default function IngestionManagementPage() {
     <div className="container mx-auto px-4 py-8">
       <div className="mb-6 flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">Content Ingestion Management</h1>
+      </div>
+
+      {/* Ingestion Jobs */}
+      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold text-gray-900">Ingestion Jobs</h2>
+        </div>
+
+        {/* Filters */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            <Select
+              value={jobFilter.status || ''}
+              onChange={(e) => {
+                setJobFilter({ ...jobFilter, status: e.target.value || undefined });
+                setJobPage(1);
+              }}
+            >
+              <option value="">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="processing">Processing</option>
+              <option value="completed">Completed</option>
+              <option value="failed">Failed</option>
+            </Select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+            <Select
+              value={jobFilter.type || ''}
+              onChange={(e) => {
+                setJobFilter({ ...jobFilter, type: e.target.value || undefined });
+                setJobPage(1);
+              }}
+            >
+              <option value="">All Types</option>
+              <option value="file">File</option>
+              <option value="url">URL</option>
+            </Select>
+          </div>
+
+          <div className="flex items-end">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setJobFilter({});
+                setJobPage(1);
+              }}
+            >
+              Clear Filters
+            </Button>
+          </div>
+        </div>
+
+        {/* Jobs Table */}
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Source
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Type
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Nuggets
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Created
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {jobs.map((job) => (
+                <tr key={job.id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900 truncate max-w-xs">
+                      {job.source}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className="px-2 py-1 text-xs font-medium rounded bg-gray-100 text-gray-800">
+                      {job.type}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span
+                      className={`px-2 py-1 text-xs font-medium rounded ${getStatusColor(job.status)}`}
+                    >
+                      {job.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {job.nuggetCount ?? '-'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {new Date(job.createdAt).toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div className="flex space-x-2">
+                      <Button variant="ghost" size="sm" onClick={() => openJobDetails(job)}>
+                        Details
+                      </Button>
+                      {job.status === 'failed' && (
+                        <Button variant="outline" size="sm" onClick={() => handleRetryJob(job.id)}>
+                          Retry
+                        </Button>
+                      )}
+                      {job.status === 'pending' && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleCancelJob(job.id)}
+                        >
+                          Cancel
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {jobs.length === 0 && <p className="text-gray-500 text-center py-4">No jobs found</p>}
+
+          {/* Pagination */}
+          {jobPagination.totalPages > 1 && (
+            <div className="flex justify-between items-center mt-4">
+              <div className="text-sm text-gray-700">
+                Showing {(jobPage - 1) * jobPagination.pageSize + 1} to{' '}
+                {Math.min(jobPage * jobPagination.pageSize, jobPagination.total)} of{' '}
+                {jobPagination.total} jobs
+              </div>
+              <div className="flex space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setJobPage((p) => Math.max(1, p - 1))}
+                  disabled={jobPage === 1}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setJobPage((p) => Math.min(jobPagination.totalPages, p + 1))}
+                  disabled={jobPage === jobPagination.totalPages}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Watched Folders */}
@@ -179,6 +501,19 @@ export default function IngestionManagementPage() {
 
       {/* Add URL Modal */}
       {showURLModal && <AddURLModal onClose={() => setShowURLModal(false)} onAdd={handleAddURL} />}
+
+      {/* Job Details Modal */}
+      {showJobDetailsModal && selectedJob && (
+        <JobDetailsModal
+          job={selectedJob}
+          onClose={() => {
+            setShowJobDetailsModal(false);
+            setSelectedJob(null);
+          }}
+          onRetry={handleRetryJob}
+          onCancel={handleCancelJob}
+        />
+      )}
     </div>
   );
 }
@@ -280,6 +615,110 @@ function AddURLModal({
           <Button type="submit">Add URL</Button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+function JobDetailsModal({
+  job,
+  onClose,
+  onRetry,
+  onCancel,
+}: {
+  job: IngestionJob;
+  onClose: () => void;
+  onRetry: (jobId: string) => void;
+  onCancel: (jobId: string) => void;
+}) {
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'bg-green-100 text-green-800';
+      case 'processing':
+        return 'bg-blue-100 text-blue-800';
+      case 'failed':
+        return 'bg-red-100 text-red-800';
+      case 'pending':
+        return 'bg-yellow-100 text-yellow-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  return (
+    <Modal isOpen={true} onClose={onClose} title="Job Details" size="lg">
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Source</label>
+          <p className="text-sm text-gray-900">{job.source}</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+            <p className="text-sm text-gray-900">{job.type}</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            <span className={`px-2 py-1 text-xs font-medium rounded ${getStatusColor(job.status)}`}>
+              {job.status}
+            </span>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nuggets Created</label>
+            <p className="text-sm text-gray-900">{job.nuggetCount ?? '-'}</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Created At</label>
+            <p className="text-sm text-gray-900">{new Date(job.createdAt).toLocaleString()}</p>
+          </div>
+
+          {job.startedAt && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Started At</label>
+              <p className="text-sm text-gray-900">{new Date(job.startedAt).toLocaleString()}</p>
+            </div>
+          )}
+
+          {job.completedAt && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Completed At</label>
+              <p className="text-sm text-gray-900">{new Date(job.completedAt).toLocaleString()}</p>
+            </div>
+          )}
+        </div>
+
+        {job.errorMessage && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Error Message</label>
+            <p className="text-sm text-red-600 bg-red-50 p-2 rounded">{job.errorMessage}</p>
+          </div>
+        )}
+
+        {job.metadata && Object.keys(job.metadata).length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Metadata</label>
+            <pre className="text-xs bg-gray-50 p-2 rounded overflow-auto">
+              {JSON.stringify(job.metadata, null, 2)}
+            </pre>
+          </div>
+        )}
+
+        <div className="flex justify-end space-x-2 pt-4 border-t">
+          {job.status === 'failed' && <Button onClick={() => onRetry(job.id)}>Retry Job</Button>}
+          {job.status === 'pending' && (
+            <Button variant="destructive" onClick={() => onCancel(job.id)}>
+              Cancel Job
+            </Button>
+          )}
+          <Button variant="secondary" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </div>
     </Modal>
   );
 }

@@ -32,7 +32,7 @@ const customJestConfig = {
     },
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(chokidar|pdf-parse)/)',
+    'node_modules/(?!(chokidar|pdf-parse|cheerio)/)',
   ],
 };
 

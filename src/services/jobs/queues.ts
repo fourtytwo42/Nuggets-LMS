@@ -12,11 +12,19 @@ export enum QueueName {
 }
 
 /**
+ * Get Redis connection for BullMQ
+ * BullMQ requires maxRetriesPerRequest: null
+ */
+function getBullMQRedisConnection() {
+  return getRedisClient({ maxRetriesPerRequest: null });
+}
+
+/**
  * Create a job queue
  */
 export function createQueue(name: QueueName): Queue {
   return new Queue(name, {
-    connection: getRedisClient(),
+    connection: getBullMQRedisConnection(),
     defaultJobOptions: {
       attempts: 3,
       backoff: {

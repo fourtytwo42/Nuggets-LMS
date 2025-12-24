@@ -29,6 +29,7 @@ AI Microlearning LMS is built using a modern, scalable architecture with clear s
 │  - AI Authoring Engine                                       │
 │  - Narrative Planning Service                                │
 │  - Learning Delivery Service                                 │
+│  - Cost Tracking Service                                     │
 └───────────────────────┬─────────────────────────────────────┘
                         │
 ┌───────────────────────▼─────────────────────────────────────┐
@@ -74,7 +75,7 @@ AI Microlearning LMS is built using a modern, scalable architecture with clear s
 - **Cost-Effective AI:** Google Gemini 3 Flash
 - **Embeddings:** Google Gemini Embeddings API
 - **Voice:** Gemini Live API
-- **Image Generation:** DALL-E (OpenAI)
+- **Image Generation:** GPT Image (gpt-image-1-mini) - OpenAI
 - **TTS:** OpenAI TTS + ElevenLabs
 
 ## Project Structure

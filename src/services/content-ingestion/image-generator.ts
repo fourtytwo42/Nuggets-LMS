@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import logger from '@/lib/logger';
 import fs from 'fs/promises';
 import path from 'path';
+import { costTracker } from '@/services/analytics/cost-tracker';
 
 let openaiClient: OpenAI | null = null;
 
@@ -23,7 +24,7 @@ function getOpenAIClient(): OpenAI {
 }
 
 /**
- * Image generation service using DALL-E
+ * Image generation service using GPT Image (gpt-image-1-mini)
  */
 export class ImageGeneratorService {
   private storagePath: string;
@@ -33,29 +34,79 @@ export class ImageGeneratorService {
   }
 
   /**
-   * Generate image for a nugget using DALL-E
+   * Calculate image tokens based on quality and size
    */
-  async generateImage(prompt: string, nuggetId: string, organizationId: string): Promise<string> {
+  private getImageTokens(quality: string, size: string): number {
+    const isSquare = size === '1024x1024';
+    const isPortrait = size === '1024x1536';
+    const isLandscape = size === '1536x1024';
+
+    if (quality === 'low') {
+      if (isSquare) return 272;
+      if (isPortrait) return 408;
+      if (isLandscape) return 400;
+    } else if (quality === 'medium') {
+      if (isSquare) return 1056;
+      if (isPortrait) return 1584;
+      if (isLandscape) return 1568;
+    } else if (quality === 'high') {
+      if (isSquare) return 4160;
+      if (isPortrait) return 6240;
+      if (isLandscape) return 6208;
+    }
+
+    return 1056; // Default: medium quality, square
+  }
+
+  /**
+   * Estimate text tokens (rough approximation: 1 token ≈ 4 characters)
+   */
+  private estimateTextTokens(text: string): number {
+    return Math.ceil(text.length / 4);
+  }
+
+  /**
+   * Generate image for a nugget using GPT Image (gpt-image-1-mini)
+   */
+  async generateImage(
+    prompt: string,
+    nuggetId: string,
+    organizationId: string,
+    options?: { quality?: 'low' | 'medium' | 'high'; size?: string }
+  ): Promise<string> {
     try {
       logger.info('Generating image for nugget', { nuggetId, prompt: prompt.substring(0, 100) });
 
       const client = getOpenAIClient();
+      const quality = options?.quality || 'medium';
+      const size = options?.size || '1024x1024';
+
       const response = await client.images.generate({
-        model: 'dall-e-3',
+        model: 'gpt-image-1-mini',
         prompt: prompt,
-        n: 1,
-        size: '1024x1024',
-        quality: 'standard',
-        response_format: 'url',
+        size: size as '1024x1024' | '1024x1536' | '1536x1024',
+        quality: quality,
+        response_format: 'b64_json',
       });
 
-      const imageUrl = response.data?.[0]?.url;
-      if (!imageUrl) {
-        throw new Error('No image URL returned from DALL-E');
+      const imageBase64 = response.data?.[0]?.b64_json;
+      if (!imageBase64) {
+        throw new Error('No image data returned from GPT Image');
       }
 
-      // Download and save image
-      const savedPath = await this.downloadAndSaveImage(imageUrl, nuggetId, organizationId);
+      // Decode base64 and save image
+      const savedPath = await this.saveBase64Image(imageBase64, nuggetId, organizationId);
+
+      // Track costs
+      const tokenCounts = this.getTokenCounts(prompt, quality, size);
+      await costTracker.trackImageGeneration(
+        'gpt-image-1-mini',
+        quality,
+        size,
+        tokenCounts.promptTokens,
+        tokenCounts.imageTokens,
+        organizationId
+      );
 
       logger.info('Image generated and saved', { nuggetId, savedPath });
       return savedPath;
@@ -80,10 +131,10 @@ export class ImageGeneratorService {
   }
 
   /**
-   * Download image from URL and save to storage
+   * Save base64-encoded image to storage
    */
-  private async downloadAndSaveImage(
-    imageUrl: string,
+  private async saveBase64Image(
+    imageBase64: string,
     nuggetId: string,
     organizationId: string
   ): Promise<string> {
@@ -92,30 +143,38 @@ export class ImageGeneratorService {
       const orgDir = path.join(this.storagePath, 'images', organizationId);
       await fs.mkdir(orgDir, { recursive: true });
 
-      // Download image
-      const response = await fetch(imageUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to download image: ${response.statusText}`);
-      }
-
-      const buffer = Buffer.from(await response.arrayBuffer());
-      const fileExtension = 'png'; // DALL-E returns PNG
+      // Decode base64 to buffer
+      const imageBuffer = Buffer.from(imageBase64, 'base64');
+      const fileExtension = 'png'; // GPT Image returns PNG
       const filename = `${nuggetId}.${fileExtension}`;
       const filePath = path.join(orgDir, filename);
 
       // Save image
-      await fs.writeFile(filePath, buffer);
+      await fs.writeFile(filePath, imageBuffer);
 
       // Return relative path from storage root
       return path.join('images', organizationId, filename);
     } catch (error) {
-      logger.error('Error downloading and saving image', {
+      logger.error('Error saving base64 image', {
         error: error instanceof Error ? error.message : String(error),
-        imageUrl,
         nuggetId,
       });
       throw error;
     }
+  }
+
+  /**
+   * Get token counts for cost tracking
+   */
+  getTokenCounts(
+    prompt: string,
+    quality: string = 'medium',
+    size: string = '1024x1024'
+  ): { promptTokens: number; imageTokens: number } {
+    return {
+      promptTokens: this.estimateTextTokens(prompt),
+      imageTokens: this.getImageTokens(quality, size),
+    };
   }
 }
 

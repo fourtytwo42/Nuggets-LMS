@@ -1,6 +1,16 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import VoiceInterface from '@/components/learner/VoiceInterface';
 
+// Mock useWebSocket hook
+jest.mock('@/hooks/useWebSocket', () => ({
+  useWebSocket: jest.fn().mockReturnValue({
+    isConnected: true,
+    sendMessage: jest.fn(),
+    connect: jest.fn(),
+    disconnect: jest.fn(),
+  }),
+}));
+
 // Mock MediaRecorder
 let mockMediaRecorderInstance: any = null;
 global.MediaRecorder = jest.fn().mockImplementation(() => {
@@ -8,6 +18,13 @@ global.MediaRecorder = jest.fn().mockImplementation(() => {
     start: jest.fn(),
     stop: jest.fn(),
     state: 'inactive',
+    stream: {
+      getTracks: jest.fn().mockReturnValue([
+        {
+          stop: jest.fn(),
+        },
+      ]),
+    },
     ondataavailable: null,
     onstop: null,
   };
@@ -24,6 +41,13 @@ global.navigator.mediaDevices = {
     ]),
   }),
 } as any;
+
+// Mock FileReader
+global.FileReader = jest.fn().mockImplementation(() => ({
+  readAsDataURL: jest.fn(),
+  onloadend: null,
+  result: 'data:audio/webm;base64,base64audio',
+})) as any;
 
 describe('VoiceInterface', () => {
   beforeEach(() => {
@@ -47,9 +71,17 @@ describe('VoiceInterface', () => {
     });
   });
 
-  it('should call onVoiceMessage when recording stops', async () => {
-    const onVoiceMessage = jest.fn().mockResolvedValue(undefined);
-    render(<VoiceInterface sessionId="session-id" onVoiceMessage={onVoiceMessage} />);
+  it('should send voice data via WebSocket when recording', async () => {
+    const { useWebSocket } = require('@/hooks/useWebSocket');
+    const mockSendMessage = jest.fn();
+    (useWebSocket as jest.Mock).mockReturnValue({
+      isConnected: true,
+      sendMessage: mockSendMessage,
+      connect: jest.fn(),
+      disconnect: jest.fn(),
+    });
+
+    render(<VoiceInterface sessionId="session-id" />);
 
     const button = screen.getByRole('button');
     fireEvent.click(button); // Start
@@ -61,24 +93,35 @@ describe('VoiceInterface', () => {
       { timeout: 1000 }
     );
 
-    // Wait a bit for MediaRecorder to be set up
+    // Wait for MediaRecorder to be set up
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    // Simulate MediaRecorder stop event
-    if (mockMediaRecorderInstance && mockMediaRecorderInstance.onstop) {
-      // Create mock audio chunks
+    // Simulate data available event
+    if (mockMediaRecorderInstance && mockMediaRecorderInstance.ondataavailable) {
       const mockBlob = new Blob(['audio data'], { type: 'audio/webm' });
       mockMediaRecorderInstance.ondataavailable({ data: mockBlob } as any);
-      mockMediaRecorderInstance.onstop();
     }
 
-    fireEvent.click(button); // Stop
-
-    await waitFor(
-      () => {
-        expect(onVoiceMessage).toHaveBeenCalled();
-      },
-      { timeout: 2000 }
+    // Should have sent voice start event
+    expect(mockSendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'session:voice:start',
+      })
     );
+  });
+
+  it('should handle WebSocket disconnection', () => {
+    const { useWebSocket } = require('@/hooks/useWebSocket');
+    (useWebSocket as jest.Mock).mockReturnValue({
+      isConnected: false,
+      sendMessage: jest.fn(),
+      connect: jest.fn(),
+      disconnect: jest.fn(),
+    });
+
+    render(<VoiceInterface sessionId="session-id" />);
+
+    // Should show connection message
+    expect(screen.getByText(/Connecting/i)).toBeInTheDocument();
   });
 });

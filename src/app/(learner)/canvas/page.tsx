@@ -1,22 +1,52 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useSessionStore } from '@/stores/session-store';
-import logger from '@/lib/logger';
+import { useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { useSession } from '@/hooks/useSession';
+import dynamicImport from 'next/dynamic';
+
+// Route segment config - prevent static generation
+export const dynamic = 'force-dynamic';
+export const dynamicParams = true;
+
+// Dynamically import LearnerCanvas to prevent SSR issues
+const LearnerCanvas = dynamicImport(() => import('@/components/learner/LearnerCanvas'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+        <p className="mt-4 text-gray-600">Loading learning session...</p>
+      </div>
+    </div>
+  ),
+});
 
 export default function LearnerCanvasPage() {
-  const { sessionId } = useSessionStore();
-  const [isLoading, setIsLoading] = useState(true);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const sessionIdParam = searchParams.get('sessionId');
+  const { session, isLoading, error, getOrCreateSession, getSession } = useSession();
 
   useEffect(() => {
-    // Initialize session if needed
-    if (!sessionId) {
-      // Create session logic would go here
-      setIsLoading(false);
-    } else {
-      setIsLoading(false);
+    const initializeSession = async () => {
+      try {
+        if (sessionIdParam) {
+          // Use provided session ID
+          await getSession(sessionIdParam);
+        } else {
+          // Get or create active session
+          await getOrCreateSession('text');
+        }
+      } catch (err) {
+        console.error('Error initializing session:', err);
+      }
+    };
+
+    if (!session && !isLoading) {
+      initializeSession();
     }
-  }, [sessionId]);
+  }, [sessionIdParam, session, isLoading, getSession, getOrCreateSession]);
 
   if (isLoading) {
     return (
@@ -29,27 +59,31 @@ export default function LearnerCanvasPage() {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main Learning Area */}
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h1 className="text-2xl font-bold text-gray-900 mb-4">Learning Canvas</h1>
-              <p className="text-gray-600">Your learning session will appear here.</p>
-            </div>
-          </div>
-
-          {/* Sidebar */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg shadow-md p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Progress</h2>
-              <p className="text-gray-600">Progress tracking will appear here.</p>
-            </div>
-          </div>
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <p className="text-red-600 mb-4">{error}</p>
+          <button
+            onClick={() => router.push('/login')}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Go to Login
+          </button>
         </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <p className="text-gray-600 mb-4">No active session found.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <LearnerCanvas sessionId={session.id} />;
 }

@@ -24,12 +24,13 @@ export class SessionService {
       });
 
       // Get learner to verify existence
-      const learner = await prisma.learner.findUnique({
+      // input.learnerId is actually the user ID, need to find learner by userId
+      const learner = await prisma.learner.findFirst({
         where: { userId: input.learnerId },
       });
 
       if (!learner) {
-        throw new Error(`Learner not found: ${input.learnerId}`);
+        throw new Error(`Learner not found for user: ${input.learnerId}`);
       }
 
       // Determine starting node
@@ -99,7 +100,15 @@ export class SessionService {
       include: {
         currentNode: {
           include: {
-            nugget: true,
+            nugget: {
+              select: {
+                id: true,
+                content: true,
+                metadata: true,
+                imageUrl: true,
+                audioUrl: true,
+              },
+            },
           },
         },
         learner: {
@@ -124,14 +133,15 @@ export class SessionService {
         throw new Error(`Session not found: ${sessionId}`);
       }
 
-      // Update current node
+      // Update current node and path history
+      const currentPathHistory = (session.pathHistory as string[]) || [];
+      const updatedPathHistory = [...currentPathHistory, nodeId];
+
       await prisma.session.update({
         where: { id: sessionId },
         data: {
           currentNodeId: nodeId,
-          pathHistory: {
-            push: nodeId,
-          } as any,
+          pathHistory: updatedPathHistory as any,
           lastActivity: new Date(),
         },
       });
@@ -193,23 +203,24 @@ export class SessionService {
         (concept) => masteryMap[concept] >= 70
       );
 
-      // Find nodes with no prerequisites or prerequisites that are mastered
-      const nodes = await prisma.narrativeNode.findMany({
+      // Get all nodes and filter in memory (Prisma doesn't support isEmpty/hasEvery on arrays directly)
+      const allNodes = await prisma.narrativeNode.findMany({
         where: {
           organizationId,
-          OR: [
-            { prerequisites: { isEmpty: true } },
-            {
-              prerequisites: {
-                hasEvery: masteredConcepts,
-              },
-            },
-          ],
         },
-        take: 1,
       });
 
-      return nodes[0] || null;
+      // Filter nodes: no prerequisites OR all prerequisites are mastered
+      const suitableNodes = allNodes.filter((node) => {
+        const prerequisites = node.prerequisites || [];
+        if (prerequisites.length === 0) {
+          return true; // No prerequisites
+        }
+        // Check if all prerequisites are mastered
+        return prerequisites.every((prereq) => masteredConcepts.includes(prereq));
+      });
+
+      return suitableNodes[0] || null;
     } catch (error) {
       logger.warn('Error finding starting node, using first available', {
         error: error instanceof Error ? error.message : String(error),
@@ -226,11 +237,11 @@ export class SessionService {
   }
 
   /**
-   * Get active sessions for a learner
+   * Get active sessions for a learner (by user ID)
    */
-  async getActiveSessions(learnerId: string): Promise<Session[]> {
-    const learner = await prisma.learner.findUnique({
-      where: { userId: learnerId },
+  async getActiveSessions(userId: string): Promise<Session[]> {
+    const learner = await prisma.learner.findFirst({
+      where: { userId },
     });
 
     if (!learner) {

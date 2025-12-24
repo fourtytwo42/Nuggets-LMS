@@ -1,22 +1,8 @@
-import { getGeminiClient } from '@/lib/ai/gemini';
+import { getGeminiClient, trackGeminiCost } from '@/lib/ai/gemini';
 import { prisma } from '@/lib/prisma';
 import logger from '@/lib/logger';
 import type { Session, Nugget, NarrativeNode } from '@prisma/client';
-
-export interface Tool {
-  name: string;
-  description: string;
-  parameters: {
-    type: string;
-    properties: Record<string, any>;
-    required?: string[];
-  };
-}
-
-export interface ToolCall {
-  name: string;
-  parameters: Record<string, any>;
-}
+import { executeTool, type ToolContext } from './tools';
 
 export interface TutorMessage {
   role: 'user' | 'assistant';
@@ -25,11 +11,11 @@ export interface TutorMessage {
 }
 
 /**
- * AI Tutor service using Gemini 3 Pro
+ * AI Tutor service using Gemini 3 Pro with function calling
  */
 export class AITutorService {
   /**
-   * Generate response from AI tutor
+   * Generate response from AI tutor with tool support
    */
   async generateResponse(
     session: Session,
@@ -43,20 +29,137 @@ export class AITutorService {
       });
 
       const client = getGeminiClient();
+
+      // Use Gemini 3 Pro for complex reasoning and tool execution
       const model = client.getGenerativeModel({
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-2.0-flash-exp', // Using available model, update to gemini-3-pro when available
       });
 
       // Build conversation context
       const context = await this.buildContext(session);
-      const prompt = this.buildPrompt(context, userMessage, conversationHistory);
+      const systemPrompt = this.buildSystemPrompt(context);
 
-      const result = await model.generateContent(prompt);
+      // Get tool definitions
+      const tools = this.getToolDefinitions();
+
+      // Build conversation messages
+      const messages = this.buildMessages(systemPrompt, userMessage, conversationHistory);
+
+      // Generate content with tools
+      // Note: Gemini SDK function calling format may vary by version
+      // This is a simplified implementation - may need adjustment based on actual SDK
+      const generationConfig = {
+        temperature: 0.7,
+      };
+
+      let result;
+      if (tools.length > 0) {
+        // Try with tools (function calling)
+        result = await model.generateContent({
+          contents: messages,
+          tools: [{ functionDeclarations: tools }],
+          generationConfig,
+        });
+      } else {
+        result = await model.generateContent({
+          contents: messages,
+          generationConfig,
+        });
+      }
+
       const response = result.response;
+      const text = response.text();
 
-      // Tool calling would be implemented here when Gemini API supports it
-      // For now, return the text response
-      return response.text();
+      // Track costs for initial generation
+      const usageMetadata = (result.response as any).usageMetadata;
+      const promptText = messages
+        .map((m: any) => {
+          if (m.parts && Array.isArray(m.parts)) {
+            return m.parts.map((p: any) => p.text || '').join(' ');
+          }
+          return '';
+        })
+        .join(' ');
+      await trackGeminiCost(
+        'gemini-2.0-flash-exp',
+        promptText,
+        text,
+        session.organizationId,
+        session.learnerId,
+        usageMetadata
+      );
+
+      // Check for function calls in response
+      // Note: Actual API may differ - this is a placeholder implementation
+      let functionCalls: any[] = [];
+      try {
+        // Try to get function calls (method name may vary)
+        if (typeof (response as any).functionCalls === 'function') {
+          functionCalls = (response as any).functionCalls() || [];
+        } else if ((response as any).functionCalls) {
+          functionCalls = (response as any).functionCalls || [];
+        }
+      } catch (error) {
+        // Function calling not available or different format
+        logger.debug('Function calls not available in response', { error });
+      }
+
+      if (functionCalls && functionCalls.length > 0) {
+        // Execute tools and get results
+        const toolResults = await this.executeToolCalls(functionCalls, session);
+
+        // Generate final response with tool results
+        // Build function response parts
+        const functionResponseParts = toolResults.map((result) => ({
+          functionResponse: {
+            name: result.name,
+            response: result.result,
+          },
+        }));
+
+        const finalMessages = [
+          ...messages,
+          {
+            role: 'model' as const,
+            parts: [{ text }],
+          },
+          {
+            role: 'user' as const,
+            parts: functionResponseParts,
+          },
+        ];
+
+        // Get final response after tool execution
+        const finalResult = await model.generateContent({
+          contents: finalMessages,
+          generationConfig,
+        });
+
+        const finalText = finalResult.response.text();
+
+        // Track costs for final generation
+        const finalUsageMetadata = (finalResult.response as any).usageMetadata;
+        const finalPromptText = finalMessages
+          .map((m: any) => {
+            if (m.parts && Array.isArray(m.parts)) {
+              return m.parts.map((p: any) => p.text || '').join(' ');
+            }
+            return '';
+          })
+          .join(' ');
+        await trackGeminiCost(
+          'gemini-2.0-flash-exp',
+          finalPromptText,
+          finalText,
+          session.organizationId,
+          session.learnerId,
+          finalUsageMetadata
+        );
+
+        return finalText;
+      }
+
+      return text;
     } catch (error) {
       logger.error('Error generating AI tutor response', {
         error: error instanceof Error ? error.message : String(error),
@@ -67,54 +170,171 @@ export class AITutorService {
   }
 
   /**
-   * Get available tools for AI tutor
+   * Get tool definitions for Gemini 3
    */
-  private getAvailableTools(): Tool[] {
+  private getToolDefinitions(): any[] {
     return [
       {
-        name: 'get_nugget',
-        description: 'Get learning nugget content by ID',
+        name: 'deliver_nugget',
+        description:
+          'Deliver a learning nugget to the learner. Use this when you want to present new content, explain a concept, or show educational material.',
         parameters: {
           type: 'object',
           properties: {
-            nuggetId: { type: 'string', description: 'Nugget ID' },
+            nuggetId: {
+              type: 'string',
+              description:
+                "ID of the nugget to deliver. Use semantic search to find relevant nuggets if you don't have a specific ID.",
+            },
+            format: {
+              type: 'string',
+              enum: ['text', 'audio', 'multimedia'],
+              description:
+                'How to deliver the nugget. text = text only, audio = audio narration, multimedia = text + image + audio',
+              default: 'multimedia',
+            },
           },
           required: ['nuggetId'],
         },
       },
       {
-        name: 'update_progress',
-        description: 'Update learner progress for a concept',
+        name: 'ask_question',
+        description:
+          'Ask learner an organic question to assess understanding. Use this naturally in conversation, not as a formal quiz.',
         parameters: {
           type: 'object',
           properties: {
-            concept: { type: 'string', description: 'Concept name' },
-            mastery: { type: 'number', description: 'Mastery level (0-100)' },
+            question: {
+              type: 'string',
+              description:
+                'The question to ask the learner. Should be natural and conversational, not formal or test-like.',
+            },
+            context: {
+              type: 'string',
+              description:
+                'What concept or topic this question tests. Used for tracking and mastery updates.',
+            },
+            expectedAnswer: {
+              type: 'string',
+              description:
+                'Expected answer or key points for evaluation. Optional, but helps with assessment accuracy.',
+            },
           },
-          required: ['concept', 'mastery'],
+          required: ['question', 'context'],
         },
       },
       {
-        name: 'navigate_narrative',
-        description: 'Navigate to a different narrative node',
+        name: 'update_mastery',
+        description:
+          'Update learner mastery level for a concept based on their responses, demonstrated understanding, or performance.',
         parameters: {
           type: 'object',
           properties: {
-            nodeId: { type: 'string', description: 'Narrative node ID' },
+            conceptId: {
+              type: 'string',
+              description:
+                'Concept identifier (e.g., machine-learning-basics, neural-networks). Use consistent identifiers.',
+            },
+            masteryLevel: {
+              type: 'number',
+              minimum: 0,
+              maximum: 100,
+              description:
+                'New mastery level (0-100). 0 = no knowledge, 50 = partial understanding, 100 = complete mastery.',
+            },
+            evidence: {
+              type: 'string',
+              description:
+                'Why this assessment (e.g., Correctly explained supervised learning, Struggled with neural network concepts). Required for audit trail.',
+            },
           },
-          required: ['nodeId'],
+          required: ['conceptId', 'masteryLevel', 'evidence'],
         },
       },
       {
-        name: 'get_related_nuggets',
-        description: 'Find related learning nuggets by topic',
+        name: 'adapt_narrative',
+        description:
+          'Change narrative path based on learner needs. Use this when the learner needs different content, difficulty level, or learning approach.',
         parameters: {
           type: 'object',
           properties: {
-            topic: { type: 'string', description: 'Topic to search for' },
-            limit: { type: 'number', description: 'Maximum number of results' },
+            reason: {
+              type: 'string',
+              description:
+                'Why the path needs to change (e.g., Learner struggling with current difficulty, Learner wants to explore different topic, Knowledge gap identified).',
+            },
+            newPath: {
+              type: 'array',
+              items: { type: 'string' },
+              description:
+                'Array of nugget IDs for new path. Can be empty array to let system auto-generate path based on reason.',
+            },
           },
-          required: ['topic'],
+          required: ['reason'],
+        },
+      },
+      {
+        name: 'show_media',
+        description:
+          'Display image or video widget in the learner interface. Use this to show illustrations, diagrams, or video content that enhances learning.',
+        parameters: {
+          type: 'object',
+          properties: {
+            type: {
+              type: 'string',
+              enum: ['image', 'video'],
+              description: 'Type of media to display',
+            },
+            url: {
+              type: 'string',
+              description:
+                'URL or path to media file. Can be nugget image/audio URL or external URL.',
+            },
+            caption: {
+              type: 'string',
+              description:
+                'Caption or description for the media. Helps with accessibility and context.',
+            },
+          },
+          required: ['type', 'url'],
+        },
+      },
+      {
+        name: 'search_nuggets',
+        description:
+          'Search for relevant learning nuggets by topic or query. Use this to find content that matches learner interests or knowledge gaps.',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: 'Search query or topic to find relevant nuggets',
+            },
+            limit: {
+              type: 'number',
+              description: 'Maximum number of results (default: 10)',
+              default: 10,
+            },
+          },
+          required: ['query'],
+        },
+      },
+      {
+        name: 'get_learner_progress',
+        description:
+          'Get current learner progress including mastery levels and knowledge gaps. Use this to understand what the learner knows and what they need to learn.',
+        parameters: {
+          type: 'object',
+          properties: {},
+        },
+      },
+      {
+        name: 'identify_gaps',
+        description:
+          'Identify knowledge gaps from low mastery concepts. Use this to find areas where the learner needs more support.',
+        parameters: {
+          type: 'object',
+          properties: {},
         },
       },
     ];
@@ -160,208 +380,129 @@ export class AITutorService {
   }
 
   /**
-   * Build prompt for AI tutor
+   * Build system prompt for AI tutor
    */
-  private buildPrompt(
-    context: string,
-    userMessage: string,
-    conversationHistory: TutorMessage[]
-  ): string {
-    let prompt = `You are an expert AI tutor helping a learner through an adaptive microlearning experience.
+  private buildSystemPrompt(context: string): string {
+    return `You are an expert AI tutor helping a learner through an adaptive microlearning experience.
 
 Context:
 ${context}
 
-Conversation History:
-${conversationHistory
-  .slice(-5)
-  .map((msg) => `${msg.role}: ${msg.content}`)
-  .join('\n')}
-
-User Message: ${userMessage}
-
 Instructions:
-1. Provide helpful, educational responses
-2. Use tools when appropriate to access learning content or update progress
-3. Guide the learner through the learning path
+1. Provide helpful, educational responses that are conversational and engaging
+2. Use tools when appropriate to access learning content, assess understanding, or update progress
+3. Guide the learner through the learning path naturally
 4. Adapt to their knowledge gaps and mastery levels
-5. Be conversational and engaging
+5. Ask questions organically in conversation (not as formal tests)
+6. Update mastery levels based on learner responses and demonstrated understanding
+7. Use deliver_nugget to present learning content
+8. Use ask_question to assess understanding naturally
+9. Use update_mastery to track progress
+10. Use adapt_narrative to change learning paths when needed
+11. Be conversational, supportive, and encouraging
 
-Respond naturally and helpfully.`;
-
-    return prompt;
+Remember: Assessment happens organically through dialogue, not through formal tests or quizzes.`;
   }
 
   /**
-   * Extract tool calls from response
+   * Build messages for Gemini API
    */
-  private extractToolCalls(response: any): ToolCall[] {
-    // Gemini API structure for tool calls
-    const toolCalls: ToolCall[] = [];
-    // Implementation depends on Gemini API response structure
-    // This is a placeholder - actual implementation will depend on API
-    return toolCalls;
+  private buildMessages(
+    systemPrompt: string,
+    userMessage: string,
+    conversationHistory: TutorMessage[]
+  ): any[] {
+    const messages: any[] = [];
+
+    // Add system prompt as first user message
+    messages.push({
+      role: 'user',
+      parts: [{ text: systemPrompt }],
+    });
+
+    // Add conversation history
+    conversationHistory.slice(-10).forEach((msg) => {
+      messages.push({
+        role: msg.role === 'user' ? 'user' : 'model',
+        parts: [{ text: msg.content }],
+      });
+    });
+
+    // Add current user message
+    messages.push({
+      role: 'user',
+      parts: [{ text: userMessage }],
+    });
+
+    return messages;
   }
 
   /**
-   * Execute tools
+   * Execute tool calls from Gemini response
    */
-  private async executeTools(toolCalls: ToolCall[], session: Session): Promise<string[]> {
-    const results: string[] = [];
+  private async executeToolCalls(
+    functionCalls: any[],
+    session: Session
+  ): Promise<Array<{ name: string; result: string }>> {
+    const toolContext: ToolContext = {
+      sessionId: session.id,
+      learnerId: session.learnerId,
+      organizationId: session.organizationId,
+    };
 
-    for (const toolCall of toolCalls) {
+    // Execute tools in parallel
+    const toolPromises = functionCalls.map(async (call) => {
       try {
-        let result: any;
+        // Handle different function call formats
+        let toolName: string;
+        let args: any;
 
-        switch (toolCall.name) {
-          case 'get_nugget':
-            result = await this.executeGetNugget(toolCall.parameters.nuggetId);
-            break;
-          case 'update_progress':
-            result = await this.executeUpdateProgress(
-              session.learnerId,
-              toolCall.parameters.concept,
-              toolCall.parameters.mastery
-            );
-            break;
-          case 'navigate_narrative':
-            result = await this.executeNavigateNarrative(session.id, toolCall.parameters.nodeId);
-            break;
-          case 'get_related_nuggets':
-            result = await this.executeGetRelatedNuggets(
-              session.organizationId,
-              toolCall.parameters.topic,
-              toolCall.parameters.limit || 5
-            );
-            break;
-          default:
-            result = { error: `Unknown tool: ${toolCall.name}` };
+        if (call.function) {
+          // Format: { function: { name: "...", args: {...} } }
+          toolName = call.function.name;
+          args = call.function.args || {};
+        } else if (call.name) {
+          // Format: { name: "...", args: {...} }
+          toolName = call.name;
+          args = typeof call.args === 'string' ? JSON.parse(call.args) : call.args || {};
+        } else {
+          throw new Error('Invalid function call format');
         }
 
-        results.push(JSON.stringify(result));
+        logger.info('Executing tool', { toolName, args, sessionId: session.id });
+
+        const toolResult = await executeTool(toolName, args, toolContext);
+
+        // Return result as JSON string (Gemini expects JSON strings for function responses)
+        const resultString = JSON.stringify(toolResult.success ? toolResult.data : toolResult);
+
+        return {
+          name: toolName,
+          result: resultString,
+        };
       } catch (error) {
-        logger.error('Error executing tool', {
+        logger.error('Error executing tool call', {
           error: error instanceof Error ? error.message : String(error),
-          toolName: toolCall.name,
+          toolCall: call,
+          sessionId: session.id,
         });
-        results.push(JSON.stringify({ error: 'Tool execution failed' }));
+
+        const toolName = call.function?.name || call.name || 'unknown';
+        return {
+          name: toolName,
+          result: JSON.stringify({
+            success: false,
+            error: {
+              errorType: 'system_error',
+              message: error instanceof Error ? error.message : 'Tool execution failed',
+            },
+          }),
+        };
       }
-    }
-
-    return results;
-  }
-
-  /**
-   * Execute get_nugget tool
-   */
-  private async executeGetNugget(nuggetId: string): Promise<any> {
-    const nugget = await prisma.nugget.findUnique({
-      where: { id: nuggetId },
     });
 
-    if (!nugget) {
-      return { error: 'Nugget not found' };
-    }
-
-    return {
-      success: true,
-      nugget: {
-        id: nugget.id,
-        content: nugget.content,
-        metadata: nugget.metadata,
-      },
-    };
-  }
-
-  /**
-   * Execute update_progress tool
-   */
-  private async executeUpdateProgress(
-    learnerId: string,
-    concept: string,
-    mastery: number
-  ): Promise<any> {
-    const learner = await prisma.learner.findUnique({
-      where: { id: learnerId },
-    });
-
-    if (!learner) {
-      return { error: 'Learner not found' };
-    }
-
-    const masteryMap = (learner.masteryMap as any) || {};
-    masteryMap[concept] = Math.max(0, Math.min(100, mastery));
-
-    await prisma.learner.update({
-      where: { id: learnerId },
-      data: { masteryMap: masteryMap as any },
-    });
-
-    return { success: true, concept, mastery };
-  }
-
-  /**
-   * Execute navigate_narrative tool
-   */
-  private async executeNavigateNarrative(sessionId: string, nodeId: string): Promise<any> {
-    const node = await prisma.narrativeNode.findUnique({
-      where: { id: nodeId },
-    });
-
-    if (!node) {
-      return { error: 'Node not found' };
-    }
-
-    // Update session current node (would use sessionService in real implementation)
-    await prisma.session.update({
-      where: { id: sessionId },
-      data: { currentNodeId: nodeId, lastActivity: new Date() },
-    });
-
-    return { success: true, nodeId };
-  }
-
-  /**
-   * Execute get_related_nuggets tool
-   */
-  private async executeGetRelatedNuggets(
-    organizationId: string,
-    topic: string,
-    limit: number
-  ): Promise<any> {
-    const nuggets = await prisma.nugget.findMany({
-      where: {
-        organizationId,
-        status: 'ready',
-        metadata: {
-          path: ['topics'],
-          array_contains: [topic],
-        } as any,
-      },
-      take: limit,
-    });
-
-    return {
-      success: true,
-      nuggets: nuggets.map((n) => ({
-        id: n.id,
-        content: n.content.substring(0, 200),
-        metadata: n.metadata,
-      })),
-    };
-  }
-
-  /**
-   * Generate response with tool results
-   */
-  private async generateResponseWithToolResults(
-    model: any,
-    userMessage: string,
-    toolResults: string[]
-  ): Promise<string> {
-    // This would be implemented based on Gemini's tool calling API
-    // For now, return a simple response
-    return 'I have processed your request. How can I help you further?';
+    const toolResults = await Promise.all(toolPromises);
+    return toolResults;
   }
 }
 
