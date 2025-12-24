@@ -1,0 +1,349 @@
+// schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Organizations (multi-tenant support)
+model Organization {
+  id          String   @id @default(uuid())
+  name        String
+  settings    Json?    // Organization-specific settings
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users            User[]
+  learners         Learner[]
+  watchedFolders   WatchedFolder[]
+  monitoredUrls    MonitoredURL[]
+  nuggets          Nugget[]
+  sessions         Session[]
+  narrativeNodes   NarrativeNode[]
+
+  @@map("organizations")
+}
+
+// Users (authentication)
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String?  @map("password_hash")
+  name          String
+  role          String   // 'admin' | 'instructor' | 'learner'
+  organizationId String  @map("organization_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  learner       Learner?
+
+  @@index([email])
+  @@index([organizationId])
+  @@index([role])
+  @@map("users")
+}
+
+// Learners (learning profiles)
+model Learner {
+  id            String   @id @default(uuid())
+  userId        String   @unique @map("user_id")
+  organizationId String   @map("organization_id")
+  profile       Json     // { interests: string[], goals: string, learningStyle: string }
+  masteryMap    Json     @default("{}") @map("mastery_map") // { concept: masteryLevel (0-100) }
+  knowledgeGaps String[] @default([]) @map("knowledge_gaps")
+  preferences   Json     @default("{}") // { voice: {...}, mode: 'text' | 'voice' }
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sessions      Session[]
+  progress      Progress[]
+
+  @@index([organizationId])
+  @@index([userId])
+  @@map("learners")
+}
+
+// Content Nuggets (atomic learning units)
+model Nugget {
+  id            String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  content       String   @db.Text
+  embedding     Unsupported("vector(1536)")? // pgvector embedding - handled via raw SQL
+  metadata      Json     @default("{}") // { topics: string[], difficulty: number, prerequisites: string[], estimatedTime: number, relatedConcepts: string[] }
+  imageUrl      String?  @map("image_url")
+  audioUrl      String?  @map("audio_url")
+  status        String   @default("pending") // 'pending' | 'processing' | 'ready' | 'failed'
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  narrativeNodes NarrativeNode[]
+  nuggetSources NuggetSource[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("nuggets")
+}
+
+// Narrative Nodes (choose-your-own-adventure graph)
+model NarrativeNode {
+  id            String   @id @default(uuid())
+  nuggetId      String   @map("nugget_id")
+  organizationId String   @map("organization_id")
+  choices       Json     @default("[]") // [{ id: string, text: string, nextNodeId: string, revealsGap: string[], confirmsMastery: string[] }]
+  prerequisites String[] @default([])
+  adaptsTo      String[] @default([]) @map("adapts_to") // Knowledge gaps addressed
+  position      Json?    // { x: number, y: number } for visualization
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  nugget        Nugget  @relation(fields: [nuggetId], references: [id], onDelete: Cascade)
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sessionNodes  SessionNode[]
+  sessions      Session[] @relation("CurrentNode")
+
+  @@index([nuggetId])
+  @@index([organizationId])
+  @@map("narrative_nodes")
+}
+
+// Learning Sessions
+model Session {
+  id            String   @id @default(uuid())
+  learnerId     String   @map("learner_id")
+  organizationId String   @map("organization_id")
+  currentNodeId String?  @map("current_node_id")
+  pathHistory   Json     @default("[]") @map("path_history") // Array of node IDs visited
+  mode          String   @default("text") // 'text' | 'voice'
+  startedAt     DateTime @default(now()) @map("started_at")
+  lastActivity  DateTime @default(now()) @map("last_activity")
+  completedAt   DateTime? @map("completed_at")
+
+  learner       Learner  @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  currentNode   NarrativeNode? @relation("CurrentNode", fields: [currentNodeId], references: [id])
+  sessionNodes  SessionNode[]
+  messages      Message[]
+
+  @@index([learnerId])
+  @@index([organizationId])
+  @@index([currentNodeId])
+  @@index([startedAt])
+  @@index([lastActivity])
+  @@map("sessions")
+}
+
+// Session Nodes (track narrative path)
+model SessionNode {
+  id            String   @id @default(uuid())
+  sessionId     String   @map("session_id")
+  nodeId        String   @map("node_id")
+  choiceId      String?  @map("choice_id") // Which choice led here
+  visitedAt     DateTime @default(now()) @map("visited_at")
+  timeSpent     Int? @map("time_spent") // seconds spent on this node
+
+  session       Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  node          NarrativeNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([nodeId])
+  @@index([visitedAt])
+  @@map("session_nodes")
+}
+
+// Messages (conversation history)
+model Message {
+  id            String   @id @default(uuid())
+  sessionId     String   @map("session_id")
+  role          String   // 'user' | 'assistant' | 'system'
+  content       String   @db.Text
+  toolCalls     Json?    @map("tool_calls") // AI tool calls [{ id, name, arguments }]
+  toolResults   Json?    @map("tool_results") // Tool execution results
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  session       Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([createdAt])
+  @@index([role])
+  @@map("messages")
+}
+
+// Progress Tracking
+model Progress {
+  id            String   @id @default(uuid())
+  learnerId     String   @map("learner_id")
+  concept       String   // Concept identifier
+  masteryLevel  Int  @map("mastery_level") // 0-100
+  evidence      String?  @db.Text // Why this assessment
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  learner       Learner  @relation(fields: [learnerId], references: [id], onDelete: Cascade)
+
+  @@unique([learnerId, concept])
+  @@index([learnerId])
+  @@index([concept])
+  @@index([masteryLevel])
+  @@map("progress")
+}
+
+// Watched Folders (content ingestion)
+model WatchedFolder {
+  id            String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  path          String
+  enabled       Boolean  @default(true)
+  fileTypes     String[] @default(["pdf", "docx", "txt"]) @map("file_types")
+  recursive     Boolean  @default(true)
+  autoProcess   Boolean  @default(true) @map("auto_process")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([enabled])
+  @@map("watched_folders")
+}
+
+// Monitored URLs (content ingestion)
+model MonitoredURL {
+  id            String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  url           String
+  enabled       Boolean  @default(true)
+  checkInterval Int  @default(5) @map("check_interval") // minutes
+  contentSelector String? @map("content_selector") // CSS selector for content extraction
+  autoProcess   Boolean  @default(true) @map("auto_process")
+  lastChecked   DateTime? @map("last_checked")
+  lastModified  DateTime? @map("last_modified")
+  lastContentHash String? @map("last_content_hash") // Hash of last content for change detection
+  etag          String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([enabled])
+  @@index([lastChecked])
+  @@map("monitored_urls")
+}
+
+// Ingestion Jobs (content processing)
+model IngestionJob {
+  id            String   @id @default(uuid())
+  type          String   // 'file' | 'url'
+  source        String   // file path or URL
+  organizationId String   @map("organization_id")
+  status        String   @default("pending") // 'pending' | 'processing' | 'completed' | 'failed'
+  metadata      Json?    @default("{}") // { folderId, urlId, fileName, fileSize, etc. }
+  nuggetCount   Int? @map("nugget_count")
+  errorMessage  String?  @map("error_message") @db.Text
+  startedAt     DateTime? @map("started_at")
+  completedAt   DateTime? @map("completed_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  nuggetSources NuggetSource[]
+
+  @@index([organizationId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([type])
+  @@map("ingestion_jobs")
+}
+
+// Nugget Sources (link nuggets to source)
+model NuggetSource {
+  id            String   @id @default(uuid())
+  nuggetId      String   @map("nugget_id")
+  sourceType    String   @map("source_type") // 'file' | 'url' | 'manual'
+  sourcePath    String   @map("source_path")
+  ingestionJobId String? @map("ingestion_job_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  nugget        Nugget   @relation(fields: [nuggetId], references: [id], onDelete: Cascade)
+  ingestionJob  IngestionJob? @relation(fields: [ingestionJobId], references: [id], onDelete: SetNull)
+
+  @@index([nuggetId])
+  @@index([ingestionJobId])
+  @@index([sourceType])
+  @@map("nugget_sources")
+}
+
+// System Settings (admin configuration)
+model SystemSetting {
+  id            String   @id @default(uuid())
+  key           String   @unique
+  value         Json
+  scope         String?  // 'system' | 'organization' | 'learner'
+  scopeId       String?  @map("scope_id")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([scope, scopeId])
+  @@index([key])
+  @@map("system_settings")
+}
+
+// Voice Configuration
+model VoiceConfig {
+  id            String   @id @default(uuid())
+  scope         String   // 'system' | 'organization' | 'learner'
+  scopeId       String?  @map("scope_id")
+  ttsProvider   String   @map("tts_provider") // 'openai-standard' | 'openai-hd' | 'elevenlabs'
+  ttsModel      String?  @map("tts_model")
+  ttsVoice      String?  @map("tts_voice")
+  sttProvider   String   @map("stt_provider") // 'openai-whisper' | 'elevenlabs'
+  sttModel      String?  @map("stt_model")
+  qualityTier   String   @map("quality_tier") // 'low' | 'mid' | 'high'
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([scope, scopeId])
+  @@unique([scope, scopeId])
+  @@map("voice_configs")
+}
+
+// AI Model Configuration
+model AIModelConfig {
+  id                    String   @id @default(uuid())
+  scope                 String   // 'system' | 'organization' | 'learner'
+  scopeId               String?  @map("scope_id")
+  contentGenerationModel String  @default("gemini-3.0-pro") @map("content_generation_model")
+  narrativePlanningModel String  @default("gemini-3.0-pro") @map("narrative_planning_model")
+  tutoringModel         String   @default("gemini-3.0-pro") @map("tutoring_model")
+  metadataModel         String   @default("gemini-3.0-flash") @map("metadata_model")
+  embeddingModel        String   @default("text-embedding-004") @map("embedding_model")
+  contentGenerationTemp Float?   @default(0.7) @map("content_generation_temp")
+  narrativePlanningTemp Float?   @default(0.8) @map("narrative_planning_temp")
+  tutoringTemp          Float?   @default(0.7) @map("tutoring_temp")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@index([scope, scopeId])
+  @@unique([scope, scopeId])
+  @@map("ai_model_configs")
+}
+
+// Analytics (learner engagement)
+model Analytics {
+  id            String   @id @default(uuid())
+  learnerId     String?  @map("learner_id")
+  organizationId String  @map("organization_id")
+  eventType     String   @map("event_type") // 'nugget_viewed' | 'choice_made' | 'question_answered' | 'mastery_updated' | 'ai_api_call' | etc.
+  eventData     Json     @default("{}") @map("event_data")
+  timestamp     DateTime @default(now())
+
+  @@index([learnerId])
+  @@index([organizationId])
+  @@index([eventType])
+  @@index([timestamp])
+  @@map("analytics")
+}
+

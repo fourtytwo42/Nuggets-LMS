@@ -1,0 +1,140 @@
+// Mock @google/generative-ai BEFORE imports
+jest.mock('@google/generative-ai', () => ({
+  GoogleGenerativeAI: jest.fn(),
+}));
+
+// Mock logger
+jest.mock('@/lib/logger', () => ({
+  default: {
+    info: jest.fn(),
+    error: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+  },
+}));
+
+import { getGeminiClient, generateEmbedding, generateEmbeddingsBatch } from '@/lib/ai/gemini';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+describe('Gemini AI Client', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env = { ...originalEnv };
+    // Reset module to clear singleton
+    jest.resetModules();
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  describe('getGeminiClient', () => {
+    it('should create Gemini client with API key', () => {
+      process.env.GOOGLE_GEMINI_API_KEY = 'test-api-key';
+      const { getGeminiClient } = require('@/lib/ai/gemini');
+      const client = getGeminiClient();
+
+      expect(GoogleGenerativeAI).toHaveBeenCalledWith('test-api-key');
+      expect(client).toBeDefined();
+    });
+
+    it('should throw error when API key is missing', () => {
+      delete process.env.GOOGLE_GEMINI_API_KEY;
+      const { getGeminiClient } = require('@/lib/ai/gemini');
+
+      expect(() => getGeminiClient()).toThrow(
+        'GOOGLE_GEMINI_API_KEY environment variable is not set'
+      );
+    });
+
+    it('should return same client instance on subsequent calls', () => {
+      process.env.GOOGLE_GEMINI_API_KEY = 'test-api-key';
+      const { getGeminiClient } = require('@/lib/ai/gemini');
+      const client1 = getGeminiClient();
+      const client2 = getGeminiClient();
+
+      expect(client1).toBe(client2);
+    });
+  });
+
+  describe('generateEmbedding', () => {
+    it('should generate embedding for text', async () => {
+      process.env.GOOGLE_GEMINI_API_KEY = 'test-api-key';
+      const mockEmbedding = [0.1, 0.2, 0.3];
+      const mockModel = {
+        embedContent: jest.fn().mockResolvedValue({
+          embedding: { values: mockEmbedding },
+        }),
+      };
+
+      const mockClient = {
+        getGenerativeModel: jest.fn(() => mockModel),
+      };
+
+      (GoogleGenerativeAI as jest.Mock).mockImplementation(() => mockClient);
+
+      const { generateEmbedding } = require('@/lib/ai/gemini');
+      const result = await generateEmbedding('test text');
+
+      expect(result).toEqual(mockEmbedding);
+      expect(mockModel.embedContent).toHaveBeenCalledWith('test text');
+    });
+
+    it('should throw error for empty embedding', async () => {
+      process.env.GOOGLE_GEMINI_API_KEY = 'test-api-key';
+      const mockModel = {
+        embedContent: jest.fn().mockResolvedValue({
+          embedding: { values: [] },
+        }),
+      };
+
+      const mockClient = {
+        getGenerativeModel: jest.fn(() => mockModel),
+      };
+
+      (GoogleGenerativeAI as jest.Mock).mockImplementation(() => mockClient);
+
+      const { generateEmbedding } = require('@/lib/ai/gemini');
+      await expect(generateEmbedding('test text')).rejects.toThrow('Empty embedding returned');
+    });
+  });
+
+  describe('generateEmbeddingsBatch', () => {
+    it('should generate embeddings for multiple texts', async () => {
+      process.env.GOOGLE_GEMINI_API_KEY = 'test-api-key';
+      const mockEmbeddings = [
+        [0.1, 0.2, 0.3],
+        [0.4, 0.5, 0.6],
+      ];
+
+      const embedContentMock = jest
+        .fn()
+        .mockResolvedValueOnce({
+          embedding: { values: mockEmbeddings[0] },
+        })
+        .mockResolvedValueOnce({
+          embedding: { values: mockEmbeddings[1] },
+        });
+
+      const mockModel = {
+        embedContent: embedContentMock,
+      };
+
+      const mockClient = {
+        getGenerativeModel: jest.fn(() => mockModel),
+      };
+
+      (GoogleGenerativeAI as jest.Mock).mockImplementation(() => mockClient);
+
+      const { generateEmbeddingsBatch } = require('@/lib/ai/gemini');
+      const result = await generateEmbeddingsBatch(['text1', 'text2']);
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toEqual(mockEmbeddings[0]);
+      expect(result[1]).toEqual(mockEmbeddings[1]);
+      expect(embedContentMock).toHaveBeenCalledTimes(2);
+    });
+  });
+});

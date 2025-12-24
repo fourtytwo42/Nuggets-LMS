@@ -1,0 +1,14 @@
+@import 'tailwindcss';
+
+/* Custom styles using @theme */
+@theme {
+  --color-primary: 59 130 246;
+  /* Add custom theme variables here */
+}
+
+/* Or use @layer base for custom styles */
+@layer base {
+  :root {
+    --color-primary: 59 130 246;
+  }
+}
