@@ -80,13 +80,13 @@ export class TextExtractorService {
     const pageCount = textResult.pages?.length || 0;
 
     return {
-      text: data.text,
+      text: text,
       metadata: {
         fileType: 'pdf',
         fileName,
         fileSize: buffer.length,
-        pageCount: data.numpages,
-        wordCount: data.text.split(/\s+/).filter((word: string) => word.length > 0).length,
+        pageCount: pageCount,
+        wordCount: text.split(/\s+/).filter((word: string) => word.length > 0).length,
       },
     };
   }
