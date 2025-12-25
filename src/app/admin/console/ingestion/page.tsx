@@ -774,7 +774,19 @@ function JobDetailsModal({
         )}
 
         <div className="flex justify-end space-x-2 pt-4 border-t">
-          {job.status === 'failed' && <Button onClick={() => onRetry(job.id)}>Retry Job</Button>}
+          {job.status === 'failed' && (
+            <>
+              <Button onClick={() => onRetry(job.id)}>Retry Job</Button>
+              <Button variant="destructive" onClick={() => onDelete(job.id)}>
+                Delete Job
+              </Button>
+            </>
+          )}
+          {job.status === 'completed' && (
+            <Button variant="destructive" onClick={() => onDelete(job.id)}>
+              Delete Job
+            </Button>
+          )}
           {job.status === 'pending' && (
             <Button variant="destructive" onClick={() => onCancel(job.id)}>
               Cancel Job
