@@ -57,15 +57,27 @@ export class TextExtractorService {
   private async extractFromPDF(filePath: string, fileName: string): Promise<ExtractionResult> {
     const buffer = await fs.readFile(filePath);
     // Dynamic import to handle ESM module
-    // pdf-parse v2.4.5 exports PDFParse as a named export
+    // pdf-parse v2.4.5 exports PDFParse as a class that must be instantiated with 'new'
     const pdfParseModule = await import('pdf-parse');
     const PDFParse = (pdfParseModule as any).PDFParse || (pdfParseModule as any).default?.PDFParse;
 
     if (!PDFParse || typeof PDFParse !== 'function') {
-      throw new Error('Could not find PDFParse function in pdf-parse module');
+      throw new Error('Could not find PDFParse class in pdf-parse module');
     }
 
-    const data = await PDFParse(buffer);
+    // PDFParse is a class, so we need to instantiate it with 'new'
+    // Constructor takes LoadParameters with data (Buffer or Uint8Array)
+    const parser = new PDFParse({ data: buffer });
+
+    // Call getText() to extract text from the PDF
+    const textResult = await parser.getText();
+
+    // Clean up the parser
+    await parser.destroy();
+
+    // Extract text and page count from TextResult
+    const text = textResult.text || '';
+    const pageCount = textResult.pages?.length || 0;
 
     return {
       text: data.text,
