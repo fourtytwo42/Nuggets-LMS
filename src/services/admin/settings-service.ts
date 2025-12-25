@@ -95,35 +95,23 @@ export class SettingsService {
   private readonly SYSTEM_SCOPE_ID: string | null = null;
 
   /**
-   * Get scopeId for Prisma queries (handles null case)
-   * Note: Prisma unique constraint may require non-null, but we use null for system scope
-   */
-  private getScopeIdForQuery(): any {
-    return this.SYSTEM_SCOPE_ID;
-  }
-
-  /**
    * Get all system settings
    */
   async getSettings(): Promise<SystemSettings> {
     try {
-      // Get voice config
-      const voiceConfig = await prisma.voiceConfig.findUnique({
+      // Get voice config - use findFirst for system scope since scopeId is null
+      const voiceConfig = await prisma.voiceConfig.findFirst({
         where: {
-          scope_scopeId: {
-            scope: this.SYSTEM_SCOPE,
-            scopeId: this.getScopeIdForQuery(),
-          },
+          scope: this.SYSTEM_SCOPE,
+          scopeId: null,
         },
       });
 
-      // Get AI model config
-      const aiModelConfig = await prisma.aIModelConfig.findUnique({
+      // Get AI model config - use findFirst for system scope since scopeId is null
+      const aiModelConfig = await prisma.aIModelConfig.findFirst({
         where: {
-          scope_scopeId: {
-            scope: this.SYSTEM_SCOPE,
-            scopeId: this.getScopeIdForQuery(),
-          },
+          scope: this.SYSTEM_SCOPE,
+          scopeId: null,
         },
       });
 
@@ -189,82 +177,96 @@ export class SettingsService {
 
       // Update voice config if provided
       if (validated.voice) {
-        await prisma.voiceConfig.upsert({
+        const existingVoiceConfig = await prisma.voiceConfig.findFirst({
           where: {
-            scope_scopeId: {
-              scope: this.SYSTEM_SCOPE,
-              scopeId: this.getScopeIdForQuery(),
-            },
-          },
-          create: {
             scope: this.SYSTEM_SCOPE,
-            scopeId: this.SYSTEM_SCOPE_ID,
-            ttsProvider: validated.voice.ttsProvider || 'openai-standard',
-            ttsModel: validated.voice.ttsModel ?? null,
-            ttsVoice: validated.voice.ttsVoice ?? null,
-            sttProvider: validated.voice.sttProvider || 'openai-whisper',
-            sttModel: validated.voice.sttModel ?? null,
-            qualityTier: validated.voice.qualityTier || 'low',
-          },
-          update: {
-            ...(validated.voice.ttsProvider && { ttsProvider: validated.voice.ttsProvider }),
-            ...(validated.voice.ttsModel !== undefined && { ttsModel: validated.voice.ttsModel }),
-            ...(validated.voice.ttsVoice !== undefined && { ttsVoice: validated.voice.ttsVoice }),
-            ...(validated.voice.sttProvider && { sttProvider: validated.voice.sttProvider }),
-            ...(validated.voice.sttModel !== undefined && { sttModel: validated.voice.sttModel }),
-            ...(validated.voice.qualityTier && { qualityTier: validated.voice.qualityTier }),
+            scopeId: null,
           },
         });
+
+        if (existingVoiceConfig) {
+          await prisma.voiceConfig.update({
+            where: { id: existingVoiceConfig.id },
+            data: {
+              ...(validated.voice.ttsProvider && { ttsProvider: validated.voice.ttsProvider }),
+              ...(validated.voice.ttsModel !== undefined && { ttsModel: validated.voice.ttsModel }),
+              ...(validated.voice.ttsVoice !== undefined && { ttsVoice: validated.voice.ttsVoice }),
+              ...(validated.voice.sttProvider && { sttProvider: validated.voice.sttProvider }),
+              ...(validated.voice.sttModel !== undefined && { sttModel: validated.voice.sttModel }),
+              ...(validated.voice.qualityTier && { qualityTier: validated.voice.qualityTier }),
+            },
+          });
+        } else {
+          await prisma.voiceConfig.create({
+            data: {
+              scope: this.SYSTEM_SCOPE,
+              scopeId: null,
+              ttsProvider: validated.voice.ttsProvider || 'openai-standard',
+              ttsModel: validated.voice.ttsModel ?? null,
+              ttsVoice: validated.voice.ttsVoice ?? null,
+              sttProvider: validated.voice.sttProvider || 'openai-whisper',
+              sttModel: validated.voice.sttModel ?? null,
+              qualityTier: validated.voice.qualityTier || 'low',
+            },
+          });
+        }
       }
 
       // Update AI model config if provided
       if (validated.aiModels) {
-        await prisma.aIModelConfig.upsert({
+        const existingAIModelConfig = await prisma.aIModelConfig.findFirst({
           where: {
-            scope_scopeId: {
-              scope: this.SYSTEM_SCOPE,
-              scopeId: this.getScopeIdForQuery(),
-            },
-          },
-          create: {
             scope: this.SYSTEM_SCOPE,
-            scopeId: this.SYSTEM_SCOPE_ID,
-            contentGenerationModel: validated.aiModels.contentGenerationModel || 'gemini-3.0-pro',
-            narrativePlanningModel: validated.aiModels.narrativePlanningModel || 'gemini-3.0-pro',
-            tutoringModel: validated.aiModels.tutoringModel || 'gemini-3.0-pro',
-            metadataModel: validated.aiModels.metadataModel || 'gemini-3.0-flash',
-            embeddingModel: validated.aiModels.embeddingModel || 'text-embedding-004',
-            contentGenerationTemp: validated.aiModels.contentGenerationTemp ?? 0.7,
-            narrativePlanningTemp: validated.aiModels.narrativePlanningTemp ?? 0.8,
-            tutoringTemp: validated.aiModels.tutoringTemp ?? 0.7,
-          },
-          update: {
-            ...(validated.aiModels.contentGenerationModel && {
-              contentGenerationModel: validated.aiModels.contentGenerationModel,
-            }),
-            ...(validated.aiModels.narrativePlanningModel && {
-              narrativePlanningModel: validated.aiModels.narrativePlanningModel,
-            }),
-            ...(validated.aiModels.tutoringModel && {
-              tutoringModel: validated.aiModels.tutoringModel,
-            }),
-            ...(validated.aiModels.metadataModel && {
-              metadataModel: validated.aiModels.metadataModel,
-            }),
-            ...(validated.aiModels.embeddingModel && {
-              embeddingModel: validated.aiModels.embeddingModel,
-            }),
-            ...(validated.aiModels.contentGenerationTemp !== undefined && {
-              contentGenerationTemp: validated.aiModels.contentGenerationTemp,
-            }),
-            ...(validated.aiModels.narrativePlanningTemp !== undefined && {
-              narrativePlanningTemp: validated.aiModels.narrativePlanningTemp,
-            }),
-            ...(validated.aiModels.tutoringTemp !== undefined && {
-              tutoringTemp: validated.aiModels.tutoringTemp,
-            }),
+            scopeId: null,
           },
         });
+
+        if (existingAIModelConfig) {
+          await prisma.aIModelConfig.update({
+            where: { id: existingAIModelConfig.id },
+            data: {
+              ...(validated.aiModels.contentGenerationModel && {
+                contentGenerationModel: validated.aiModels.contentGenerationModel,
+              }),
+              ...(validated.aiModels.narrativePlanningModel && {
+                narrativePlanningModel: validated.aiModels.narrativePlanningModel,
+              }),
+              ...(validated.aiModels.tutoringModel && {
+                tutoringModel: validated.aiModels.tutoringModel,
+              }),
+              ...(validated.aiModels.metadataModel && {
+                metadataModel: validated.aiModels.metadataModel,
+              }),
+              ...(validated.aiModels.embeddingModel && {
+                embeddingModel: validated.aiModels.embeddingModel,
+              }),
+              ...(validated.aiModels.contentGenerationTemp !== undefined && {
+                contentGenerationTemp: validated.aiModels.contentGenerationTemp,
+              }),
+              ...(validated.aiModels.narrativePlanningTemp !== undefined && {
+                narrativePlanningTemp: validated.aiModels.narrativePlanningTemp,
+              }),
+              ...(validated.aiModels.tutoringTemp !== undefined && {
+                tutoringTemp: validated.aiModels.tutoringTemp,
+              }),
+            },
+          });
+        } else {
+          await prisma.aIModelConfig.create({
+            data: {
+              scope: this.SYSTEM_SCOPE,
+              scopeId: null,
+              contentGenerationModel: validated.aiModels.contentGenerationModel || 'gemini-3.0-pro',
+              narrativePlanningModel: validated.aiModels.narrativePlanningModel || 'gemini-3.0-pro',
+              tutoringModel: validated.aiModels.tutoringModel || 'gemini-3.0-pro',
+              metadataModel: validated.aiModels.metadataModel || 'gemini-3.0-flash',
+              embeddingModel: validated.aiModels.embeddingModel || 'text-embedding-004',
+              contentGenerationTemp: validated.aiModels.contentGenerationTemp ?? 0.7,
+              narrativePlanningTemp: validated.aiModels.narrativePlanningTemp ?? 0.8,
+              tutoringTemp: validated.aiModels.tutoringTemp ?? 0.7,
+            },
+          });
+        }
       }
 
       // Update content processing settings if provided
