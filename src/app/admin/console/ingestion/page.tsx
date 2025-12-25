@@ -52,8 +52,15 @@ export default function IngestionManagementPage() {
   };
 
   useEffect(() => {
-    fetchURLs();
-    fetchJobs();
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        await Promise.all([fetchURLs(), fetchJobs()]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadData();
   }, []);
 
   // Poll for job updates every 5 seconds
