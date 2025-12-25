@@ -6,14 +6,6 @@ import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Select } from '@/components/ui/Select';
 
-interface WatchedFolder {
-  id: string;
-  path: string;
-  enabled: boolean;
-  fileTypes: string[];
-  recursive: boolean;
-}
-
 interface MonitoredURL {
   id: string;
   url: string;
@@ -36,10 +28,8 @@ interface IngestionJob {
 }
 
 export default function IngestionManagementPage() {
-  const [folders, setFolders] = useState<WatchedFolder[]>([]);
   const [urls, setUrls] = useState<MonitoredURL[]>([]);
   const [jobs, setJobs] = useState<IngestionJob[]>([]);
-  const [showFolderModal, setShowFolderModal] = useState(false);
   const [showURLModal, setShowURLModal] = useState(false);
   const [showJobDetailsModal, setShowJobDetailsModal] = useState(false);
   const [selectedJob, setSelectedJob] = useState<IngestionJob | null>(null);
@@ -62,7 +52,6 @@ export default function IngestionManagementPage() {
   };
 
   useEffect(() => {
-    fetchFolders();
     fetchURLs();
     fetchJobs();
   }, []);
@@ -75,25 +64,6 @@ export default function IngestionManagementPage() {
 
     return () => clearInterval(interval);
   }, [jobFilter, jobPage]);
-
-  const fetchFolders = async () => {
-    try {
-      const token = getToken();
-      const response = await fetch('/api/admin/ingestion/folders', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setFolders(Array.isArray(data.folders) ? data.folders : []);
-      }
-    } catch (error) {
-      console.error('Error fetching folders:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const fetchURLs = async () => {
     try {
@@ -139,27 +109,6 @@ export default function IngestionManagementPage() {
       }
     } catch (error) {
       console.error('Error fetching jobs:', error);
-    }
-  };
-
-  const handleAddFolder = async (path: string, fileTypes: string[], recursive: boolean) => {
-    try {
-      const token = getToken();
-      const response = await fetch('/api/admin/ingestion/folders', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ path, fileTypes, recursive }),
-      });
-
-      if (response.ok) {
-        await fetchFolders();
-        setShowFolderModal(false);
-      }
-    } catch (error) {
-      console.error('Error adding folder:', error);
     }
   };
 
@@ -437,39 +386,12 @@ export default function IngestionManagementPage() {
         </div>
       </div>
 
-      {/* Watched Folders */}
+      {/* File Upload */}
       <div className="bg-white rounded-lg shadow-md p-6 mb-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-900">Watched Folders</h2>
-          <Button onClick={() => setShowFolderModal(true)}>Add Folder</Button>
+          <h2 className="text-xl font-semibold text-gray-900">Upload Files</h2>
         </div>
-        <div className="space-y-2">
-          {Array.isArray(folders) && folders.length > 0 ? (
-            folders.map((folder) => (
-              <div
-                key={folder.id}
-                className="flex justify-between items-center p-3 bg-gray-50 rounded"
-              >
-                <div>
-                  <p className="font-medium">{folder.path}</p>
-                  <p className="text-sm text-gray-600">
-                    Types: {folder.fileTypes.join(', ')} | Recursive:{' '}
-                    {folder.recursive ? 'Yes' : 'No'}
-                  </p>
-                </div>
-                <span
-                  className={`px-2 py-1 rounded text-sm ${
-                    folder.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                  }`}
-                >
-                  {folder.enabled ? 'Enabled' : 'Disabled'}
-                </span>
-              </div>
-            ))
-          ) : (
-            <p className="text-gray-500 text-center py-4">No watched folders configured</p>
-          )}
-        </div>
+        <FileUploadSection onUploadSuccess={() => fetchJobs()} />
       </div>
 
       {/* Monitored URLs */}
@@ -507,11 +429,6 @@ export default function IngestionManagementPage() {
         </div>
       </div>
 
-      {/* Add Folder Modal */}
-      {showFolderModal && (
-        <AddFolderModal onClose={() => setShowFolderModal(false)} onAdd={handleAddFolder} />
-      )}
-
       {/* Add URL Modal */}
       {showURLModal && <AddURLModal onClose={() => setShowURLModal(false)} onAdd={handleAddURL} />}
 
@@ -531,59 +448,146 @@ export default function IngestionManagementPage() {
   );
 }
 
-function AddFolderModal({
-  onClose,
-  onAdd,
-}: {
-  onClose: () => void;
-  onAdd: (path: string, fileTypes: string[], recursive: boolean) => void;
-}) {
-  const [path, setPath] = useState('');
-  const [fileTypes, setFileTypes] = useState('pdf,docx,txt');
-  const [recursive, setRecursive] = useState(true);
+function FileUploadSection({ onUploadSuccess }: { onUploadSuccess: () => void }) {
+  const [files, setFiles] = useState<File[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onAdd(
-      path,
-      fileTypes.split(',').map((t) => t.trim()),
-      recursive
-    );
+  const getToken = () => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('token');
+    }
+    return null;
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const fileArray = Array.from(e.target.files);
+      setFiles(fileArray);
+      setUploadStatus(null);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (files.length === 0) {
+      setUploadStatus({ type: 'error', message: 'Please select at least one file' });
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadStatus(null);
+
+    try {
+      const token = getToken();
+      if (!token) {
+        setUploadStatus({ type: 'error', message: 'Authentication token not found' });
+        setIsUploading(false);
+        return;
+      }
+
+      const formData = new FormData();
+      files.forEach((file) => {
+        formData.append('files', file);
+      });
+
+      const response = await fetch('/api/admin/ingestion/upload', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Upload failed');
+      }
+
+      setUploadStatus({
+        type: 'success',
+        message: `Successfully uploaded ${data.uploaded.length} file(s). ${data.errors?.length ? `${data.errors.length} error(s).` : ''}`,
+      });
+
+      // Clear selected files
+      setFiles([]);
+      const fileInput = document.getElementById('file-upload') as HTMLInputElement;
+      if (fileInput) {
+        fileInput.value = '';
+      }
+
+      // Refresh jobs list
+      onUploadSuccess();
+    } catch (error) {
+      setUploadStatus({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Upload failed',
+      });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   return (
-    <Modal isOpen={true} onClose={onClose} title="Add Watched Folder">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Folder Path</label>
-          <Input value={path} onChange={(e) => setPath(e.target.value)} required />
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Select Files (PDF, DOCX, TXT, MD, HTML)
+        </label>
+        <input
+          id="file-upload"
+          type="file"
+          multiple
+          accept=".pdf,.docx,.txt,.md,.html,.htm"
+          onChange={handleFileChange}
+          className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+        />
+        <p className="mt-1 text-sm text-gray-500">
+          Maximum file size: {parseInt(process.env.UPLOAD_MAX_SIZE || '10485760', 10) / 1024 / 1024}
+          MB
+        </p>
+      </div>
+
+      {files.length > 0 && (
+        <div className="bg-gray-50 rounded-lg p-4">
+          <p className="text-sm font-medium text-gray-700 mb-2">Selected Files:</p>
+          <ul className="list-disc list-inside space-y-1">
+            {files.map((file, index) => (
+              <li key={index} className="text-sm text-gray-600">
+                {file.name} ({(file.size / 1024).toFixed(2)} KB)
+              </li>
+            ))}
+          </ul>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            File Types (comma-separated)
-          </label>
-          <Input value={fileTypes} onChange={(e) => setFileTypes(e.target.value)} required />
+      )}
+
+      {uploadStatus && (
+        <div
+          className={`rounded-lg p-4 ${
+            uploadStatus.type === 'success'
+              ? 'bg-green-50 border border-green-200'
+              : 'bg-red-50 border border-red-200'
+          }`}
+        >
+          <p
+            className={`text-sm ${
+              uploadStatus.type === 'success' ? 'text-green-800' : 'text-red-800'
+            }`}
+          >
+            {uploadStatus.message}
+          </p>
         </div>
-        <div className="flex items-center">
-          <input
-            type="checkbox"
-            id="recursive"
-            checked={recursive}
-            onChange={(e) => setRecursive(e.target.checked)}
-            className="mr-2"
-          />
-          <label htmlFor="recursive" className="text-sm text-gray-700">
-            Watch subdirectories
-          </label>
-        </div>
-        <div className="flex justify-end space-x-2">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit">Add Folder</Button>
-        </div>
-      </form>
-    </Modal>
+      )}
+
+      <Button onClick={handleUpload} disabled={isUploading || files.length === 0}>
+        {isUploading
+          ? 'Uploading...'
+          : `Upload ${files.length > 0 ? `${files.length} ` : ''}File(s)`}
+      </Button>
+    </div>
   );
 }
 
