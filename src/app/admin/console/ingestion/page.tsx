@@ -545,10 +545,7 @@ function FileUploadSection({ onUploadSuccess }: { onUploadSuccess: () => void })
           onChange={handleFileChange}
           className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
         />
-        <p className="mt-1 text-sm text-gray-500">
-          Maximum file size: {parseInt(process.env.UPLOAD_MAX_SIZE || '10485760', 10) / 1024 / 1024}
-          MB
-        </p>
+        <p className="mt-1 text-sm text-gray-500">Maximum file size: 10MB per file</p>
       </div>
 
       {files.length > 0 && (
