@@ -58,7 +58,9 @@ export class TextExtractorService {
     const buffer = await fs.readFile(filePath);
     // Dynamic import to handle ESM module
     const pdfParseModule = await import('pdf-parse');
-    const pdfParse = (pdfParseModule as any).default || pdfParseModule;
+    // pdf-parse can export as default or named export depending on module system
+    const pdfParse =
+      (pdfParseModule as any).default?.default || (pdfParseModule as any).default || pdfParseModule;
     const data = await pdfParse(buffer);
 
     return {
