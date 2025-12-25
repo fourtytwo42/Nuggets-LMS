@@ -92,7 +92,6 @@ const settingsUpdateSchema = z.object({
  */
 export class SettingsService {
   private readonly SYSTEM_SCOPE = 'system';
-  private readonly SYSTEM_SCOPE_ID: string | null = null;
 
   /**
    * Get all system settings
