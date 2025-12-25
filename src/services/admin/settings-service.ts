@@ -287,18 +287,27 @@ export class SettingsService {
           }),
         };
 
-        await prisma.systemSetting.upsert({
+        const existingContentProcessing = await prisma.systemSetting.findUnique({
           where: { key: 'contentProcessing' },
-          create: {
-            key: 'contentProcessing',
-            value: updatedContentProcessing as any,
-            scope: this.SYSTEM_SCOPE,
-            scopeId: this.SYSTEM_SCOPE_ID,
-          },
-          update: {
-            value: updatedContentProcessing as any,
-          },
         });
+
+        if (existingContentProcessing) {
+          await prisma.systemSetting.update({
+            where: { key: 'contentProcessing' },
+            data: {
+              value: updatedContentProcessing as any,
+            },
+          });
+        } else {
+          await prisma.systemSetting.create({
+            data: {
+              key: 'contentProcessing',
+              value: updatedContentProcessing as any,
+              scope: this.SYSTEM_SCOPE,
+              scopeId: null,
+            },
+          });
+        }
       }
 
       // Return updated settings
