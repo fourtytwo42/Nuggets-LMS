@@ -690,11 +690,13 @@ function JobDetailsModal({
   onClose,
   onRetry,
   onCancel,
+  onDelete,
 }: {
   job: IngestionJob;
   onClose: () => void;
   onRetry: (jobId: string) => void;
   onCancel: (jobId: string) => void;
+  onDelete: (jobId: string) => void;
 }) {
   const getStatusColor = (status: string) => {
     switch (status) {
