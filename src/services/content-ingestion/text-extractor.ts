@@ -57,11 +57,15 @@ export class TextExtractorService {
   private async extractFromPDF(filePath: string, fileName: string): Promise<ExtractionResult> {
     const buffer = await fs.readFile(filePath);
     // Dynamic import to handle ESM module
+    // pdf-parse v2.4.5 exports PDFParse as a named export
     const pdfParseModule = await import('pdf-parse');
-    // pdf-parse can export as default or named export depending on module system
-    const pdfParse =
-      (pdfParseModule as any).default?.default || (pdfParseModule as any).default || pdfParseModule;
-    const data = await pdfParse(buffer);
+    const PDFParse = (pdfParseModule as any).PDFParse || (pdfParseModule as any).default?.PDFParse;
+
+    if (!PDFParse || typeof PDFParse !== 'function') {
+      throw new Error('Could not find PDFParse function in pdf-parse module');
+    }
+
+    const data = await PDFParse(buffer);
 
     return {
       text: data.text,
