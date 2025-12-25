@@ -23,7 +23,11 @@ export async function POST(request: NextRequest) {
     }
 
     const storagePath = process.env.STORAGE_PATH || './storage';
-    const uploadPath = path.join(storagePath, 'uploads', user.organizationId);
+    // Resolve to absolute path to ensure workers can find the file
+    const absoluteStoragePath = path.isAbsolute(storagePath)
+      ? storagePath
+      : path.resolve(process.cwd(), storagePath);
+    const uploadPath = path.join(absoluteStoragePath, 'uploads', user.organizationId);
 
     // Ensure upload directory exists
     await fs.mkdir(uploadPath, { recursive: true });
@@ -61,6 +65,7 @@ export async function POST(request: NextRequest) {
         // Generate unique filename to avoid conflicts
         const timestamp = Date.now();
         const uniqueFileName = `${timestamp}-${fileName}`;
+        // Use absolute path so workers can find the file
         const filePath = path.join(uploadPath, uniqueFileName);
 
         // Save file to disk

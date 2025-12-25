@@ -53,7 +53,8 @@ export async function processIngestionJob(job: Job<IngestionJobData>): Promise<{
 
     if (type === 'file') {
       // Process file
-      sourcePath = source;
+      // Resolve to absolute path if relative
+      sourcePath = path.isAbsolute(source) ? source : path.resolve(process.cwd(), source);
 
       // Check if file exists
       try {
