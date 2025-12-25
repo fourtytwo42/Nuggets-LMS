@@ -188,6 +188,32 @@ export default function IngestionManagementPage() {
     }
   };
 
+  const handleDeleteJob = async (jobId: string) => {
+    if (!confirm('Are you sure you want to delete this job? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const token = getToken();
+      const response = await fetch(`/api/admin/ingestion/jobs/${jobId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        await fetchJobs();
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to delete job');
+      }
+    } catch (error) {
+      console.error('Error deleting job:', error);
+      alert('Failed to delete job');
+    }
+  };
+
   const openJobDetails = (job: IngestionJob) => {
     setSelectedJob(job);
     setShowJobDetailsModal(true);
@@ -331,12 +357,30 @@ export default function IngestionManagementPage() {
                           Details
                         </Button>
                         {job.status === 'failed' && (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRetryJob(job.id)}
+                            >
+                              Retry
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleDeleteJob(job.id)}
+                            >
+                              Delete
+                            </Button>
+                          </>
+                        )}
+                        {job.status === 'completed' && (
                           <Button
-                            variant="outline"
+                            variant="destructive"
                             size="sm"
-                            onClick={() => handleRetryJob(job.id)}
+                            onClick={() => handleDeleteJob(job.id)}
                           >
-                            Retry
+                            Delete
                           </Button>
                         )}
                         {job.status === 'pending' && (
@@ -449,6 +493,7 @@ export default function IngestionManagementPage() {
           }}
           onRetry={handleRetryJob}
           onCancel={handleCancelJob}
+          onDelete={handleDeleteJob}
         />
       )}
     </main>
